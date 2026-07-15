@@ -170,4 +170,93 @@
 ### 待清理临时文件
 - `e:\git\` 根目录下的微信文章抓取脚本（等用户统一指示后清理）
 
+---
+
+## 2026-07-16 15:30 — GitHub 仓库创建 + architecture-review 全流程（CONCERNS → PASS）
+
+### 本次工作目标
+1. 使用 `gh` CLI 在 GitHub 上创建新仓库
+2. 启动 `/architecture-review` 技能，验证架构完整性与一致性
+
+### GitHub 仓库
+- **仓库地址**: https://github.com/ZedeX/growth-points-bank
+- **创建方式**: `gh repo create ZedeX/growth-points-bank --public --source=. --remote=origin --push`
+- **默认分支**: master
+- **最新提交**: `5c3b884` (docs(architecture): add ADR-0011/0012/0013, resolve 8 cross-ADR conflicts, PASS verdict)
+
+### architecture-review 执行流程（9 阶段）
+1. **Phase 1-3**: 加载 3 份设计文档 + 10 ADR，提取 70 个 TR（技术需求），构建可追溯性矩阵
+   - 初始覆盖率：46 covered (65.7%) / 7 partial / 17 gap
+2. **Phase 4**: 跨 ADR 冲突检测 → 发现 8 个冲突（3 个 BLOCKING）
+3. **Phase 5-6**: 技术栈审计 + 文档覆盖度检查
+4. **Phase 7**: 初次裁决 → 🟡 CONCERNS
+5. **Phase 8**: 写入 3 份评审产物
+6. **Phase 9**: 移交 + 用户选择"依次完成 ADR + 修订"
+
+### 8 个跨 ADR 冲突及解决状态
+
+| # | 冲突 | 解决方案 | 状态 |
+|---|------|---------|------|
+| 1 | Schema 名不一致（gpb_public vs app） | ARCHITECTURE.md 改为 `app` | ✅ |
+| 2 | 目录结构冲突（单包 vs monorepo） | DETAILED_DESIGN §12.1 加废弃说明 | ✅ |
+| 3 | 重试退避策略（linear vs exponential） | ADR-0003 改为 exponential `50 * 2^attempt` | ✅ |
+| 4 | UNIQUE 索引范围（global vs per-child） | ADR-0003 改为 partial unique `(child_id, source_type, source_id) WHERE ...` | ✅ |
+| 5 | BIGSERIAL PK 偏离 UUID 约定 | ADR-0005 加 rationale 注释（审计日志写性能） | ✅ |
+| 6 | access_token 存储方式（ADR-0009 误称 Argon2） | ADR-0002 新增 HMAC-SHA256 子节；ADR-0009 修正引用 | ✅ |
+| 7 | 加密阶段冲突（ADR-0005 skip vs ADR-0009 encrypted） | ADR-0009 新增 Phased Rollout 子节（Phase 1: children+diaries；Phase 2: weekly_reviews） | ✅ |
+| 8 | Crypto API 不一致（crypto.subtle vs Node crypto） | ADR-0005 头改为 `Node.js crypto module` | ✅ |
+
+### 新增 ADR（3 个 P0，覆盖 14 个 TR）
+
+| ADR | 标题 | 覆盖 TR | 文件 |
+|-----|------|---------|------|
+| ADR-0011 | Task & Dimension Management | TR-tasks-001/002/003/004/006/007 (6) | `docs/architecture/adr-0011-task-and-dimension-management.md` |
+| ADR-0012 | Reward Management | TR-rewards-001/002 (2) | `docs/architecture/adr-0012-reward-management.md` |
+| ADR-0013 | Cross-Cutting Concerns | TR-xc-001/002/003/004 + TR-notify-001/002 (6) | `docs/architecture/adr-0013-cross-cutting-concerns.md` |
+
+### 评审产物（3 份文件）
+- `docs/architecture/architecture-review-2026-07-16.md` — 完整评审报告（11 节 + §12 re-run）
+- `docs/architecture/requirements-traceability.md` — 70 TR 可追溯性矩阵（16 系统）
+- `docs/architecture/tr-registry.yaml` — 机器可读 TR 注册表 + 冲突 + 裁决
+
+### 修改文件清单（6 份）
+- `docs/ARCHITECTURE.md` — Conflict #1 (schema name)
+- `docs/DETAILED_DESIGN.md` — Conflict #2 (directory structure superseded note)
+- `docs/architecture/adr-0002-authentication.md` — Conflict #6 part 1 (HMAC-SHA256 access_token storage)
+- `docs/architecture/adr-0003-points-integrity.md` — Conflicts #3, #4 (exponential backoff + partial unique index)
+- `docs/architecture/adr-0005-double-blind-review.md` — Conflicts #5, #8 (BIGSERIAL rationale + Node crypto header)
+- `docs/architecture/adr-0009-data-encryption.md` — Conflicts #6 part 2/3, #7 (access_token ref fix + Phased Rollout)
+
+### 重新评审结果
+- **裁决**: ✅ **PASS (MVP Phase 1 scope)**
+- **TR 覆盖率**: 65.7% → 85.7% (+20pp)
+- **冲突解决率**: 8/8 (100%)
+- **P0 缺口覆盖**: 14/14 TRs
+- **Pre-Production gate**: ✅ CLEARED — 可进入 story 创建与实施阶段
+
+### 剩余 P1/P2 缺口（不阻塞 MVP Phase 1）
+| TR ID | 需求 | 建议 ADR | 阶段 |
+|-------|------|---------|------|
+| TR-diary-001 | 成长日记 CRUD | ADR-0014 | Phase 2 |
+| TR-audit-001 | 审计日志 | ADR-0015 | Hardening |
+| TR-xc-009 | 数据导出+30天删除 | ADR-0016 | Compliance |
+| TR-report-001/002 | 报表与分析 | ADR-0017 | Phase 2 |
+
+### 关键技术决策（本次新增）
+- **HMAC-SHA256 用于 access_token 存储**: O(1) 查找 + DB 泄露保护 + 便宜轮换（不同于密码的 argon2 per-row 验证）
+- **partial unique index 包含 child_id**: 防止多租户全局冲突 + 允许 revocation 行与 earn 行共存
+- **exponential backoff 对齐**: ADR-0003 与 ADR-0010 + DETAILED_DESIGN §6.5 三处统一为 `50 * 2^attempt`
+- **BIGSERIAL 审计日志 PK**: append-only + 写性能优先 + 索引 footprint 小（偏离 UUID 约定，有 rationale）
+- **加密分期策略**: Phase 1 仅 children+diaries 字段加密；weekly_reviews 依赖 ADR-0005 API 层访问控制 + CHECK + 审计日志
+
+### Git 操作
+- 提交: `5c3b884` (12 files changed, +2625 lines, -9 lines)
+- 推送: `970ec1d..5c3b884 master -> master`（直连，清空 proxy env vars）
+
+### 下一步建议
+1. 从 Issue #01 (Project Scaffolding) 开始实施，使用 `/implement` 逐个推进
+2. 每个 ticket 完成后用 `/code-review` 审查
+3. Phase 2 启动前补写 ADR-0014 (Growth Diary) 和 ADR-0017 (Reporting)
+4. 合规审查前补写 ADR-0015 (Audit Log) 和 ADR-0016 (Data Lifecycle)
+
 

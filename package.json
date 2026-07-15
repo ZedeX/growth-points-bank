@@ -1,0 +1,26 @@
+{
+  "name": "growth-points-bank",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Summer Growth Points Bank - family multi-tenant task/checkin/points/rewards web platform",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "dev:web": "pnpm --filter @gpb/web dev",
+    "dev:api": "pnpm --filter @gpb/api dev",
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "db:generate": "pnpm --filter @gpb/api drizzle-kit generate",
+    "db:migrate": "pnpm --filter @gpb/api tsx src/server/db/migrate.ts",
+    "db:seed": "pnpm --filter @gpb/api tsx src/server/db/seed.ts",
+    "db:studio": "pnpm --filter @gpb/api drizzle-kit studio"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  },
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
