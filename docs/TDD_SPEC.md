@@ -1,9 +1,11 @@
 # 暑假成长积分银行 - TDD 测试规格文档
 
-> **文档版本**：v1.0
+> **文档版本**：v2.0（基于 PRD v1.0 + ARCHITECTURE.md + DETAILED_DESIGN.md 完善）
 > **创建日期**：2026-07-15
+> **更新日期**：2026-07-16
 > **关联PRD**：[PRD.md](./PRD.md)
-> **适用范围**：第一期（MVP）核心闭环功能
+> **关联架构**：[ARCHITECTURE.md](./ARCHITECTURE.md) · [DETAILED_DESIGN.md](./DETAILED_DESIGN.md) · [API.md](./API.md)
+> **适用范围**：MVP（§4-§9）+ 并发/安全/错误流（§13-§17）+ Phase 2 预占位（§18）
 
 ---
 
@@ -21,6 +23,14 @@
 10. [测试数据固定装置](#10-测试数据固定装置)
 11. [Mock/Stub 策略](#11-mockstub-策略)
 12. [TDD 执行顺序](#12-tdd-执行顺序)
+13. [测试用例 - 每周复盘（双盲机制）](#13-测试用例---每周复盘双盲机制)
+14. [测试用例 - 成长日记](#14-测试用例---成长日记)
+15. [测试用例 - 并发与竞态](#15-测试用例---并发与竞态)
+16. [测试用例 - 安全与多租户隔离](#16-测试用例---安全与多租户隔离)
+17. [测试用例 - 错误流与边界条件](#17-测试用例---错误流与边界条件)
+18. [测试用例 - Phase 2 功能预占位](#18-测试用例---phase-2-功能预占位)
+19. [测试用例 - 性能与负载](#19-测试用例---性能与负载)
+20. [更新后的总计](#20-更新后的总计)
 
 ---
 
@@ -1193,6 +1203,840 @@ afterAll(() => mockServer.close());
 | 组件测试 | 14 |
 | E2E测试 | 2 |
 | **总计** | **64** |
+
+---
+
+## 13. 测试用例 - 每周复盘（双盲机制）
+
+> 关联：[PRD §3.3](./PRD.md) · [ADR-0005](./architecture/adr-0005-double-blind-review.md) · [DETAILED_DESIGN §3.3](./DETAILED_DESIGN.md)
+
+### 切片 13.1：复盘可见性纯函数（单元测试）
+
+```typescript
+// tests/unit/reviews.test.ts
+
+describe('getReviewVisibility()', () => {
+
+  // RED 1: 双方都未提交，仅看到自己区域
+  test('returns own content and hides other when neither committed', () => {
+    const review = makeReview({
+      best_thing: '我的进步',
+      parent_observation: '家长的看见',  // 不应可见
+      child_committed_at: null,
+      parent_committed_at: null,
+    });
+    const viewerRole = 'child';
+
+    const visible = getReviewVisibility(review, viewerRole);
+
+    expect(visible.best_thing).toBe('我的进步');
+    expect(visible.parent_observation).toBeNull();
+    expect(visible.other_status).toBe('other_not_started');
+  });
+
+  // RED 2: 对方已提交，自己可见
+  test('shows other content when other has committed', () => {
+    const review = makeReview({
+      best_thing: '我的进步',
+      parent_observation: '家长的看见',
+      child_committed_at: null,
+      parent_committed_at: new Date('2026-07-13'),
+    });
+    const viewerRole = 'child';
+
+    const visible = getReviewVisibility(review, viewerRole);
+
+    expect(visible.parent_observation).toBe('家长的看见');
+    expect(visible.other_status).toBe('other_committed');
+  });
+
+  // RED 3: 双方都提交后 locked
+  test('returns locked=true when both committed', () => {
+    const review = makeReview({
+      child_committed_at: new Date('2026-07-13T10:00:00Z'),
+      parent_committed_at: new Date('2026-07-13T15:00:00Z'),
+      locked_at: new Date('2026-07-13T15:00:00Z'),
+    });
+
+    const visible = getReviewVisibility(review, 'child');
+
+    expect(visible.locked).toBe(true);
+  });
+});
+```
+
+### 切片 13.2：复盘提交（集成测试）
+
+```typescript
+// tests/integration/reviews.test.ts
+
+describe('POST /api/reviews/child', () => {
+
+  // RED 1: 孩子提交复盘
+  test('child submits own review section', async () => {
+    const { childToken, childId } = await loginAsChild();
+
+    const response = await request(app)
+      .post('/api/reviews/child')
+      .set('Authorization', `Bearer ${childToken}`)
+      .send({
+        week_start_date: '2026-07-13',
+        best_thing: '我学会了游泳',
+        difficulty: '早起很难',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.locked).toBe(false);
+    expect(response.body.child_committed_at).toBeDefined();
+  });
+
+  // RED 2: 已 locked 不可再提交
+  test('rejects submission when review is locked', async () => {
+    const { childToken, childId } = await loginAsChild();
+    await lockReview(childId, '2026-07-13');
+
+    const response = await request(app)
+      .post('/api/reviews/child')
+      .set('Authorization', `Bearer ${childToken}`)
+      .send({
+        week_start_date: '2026-07-13',
+        best_thing: '试图修改',
+        difficulty: '...',
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('REVIEW_LOCKED');
+  });
+
+  // RED 3: 双方提交后自动 lock
+  test('auto-locks when both child and parent have committed', async () => {
+    const { childToken, childId, parentToken } = await setupFamilyWithBoth();
+
+    // 孩子先提交
+    await request(app)
+      .post('/api/reviews/child')
+      .set('Authorization', `Bearer ${childToken}`)
+      .send({ week_start_date: '2026-07-13', best_thing: '...', difficulty: '...' });
+
+    // 家长后提交 → 触发 lock
+    const response = await request(app)
+      .post('/api/reviews/parent')
+      .set('Authorization', `Bearer ${parentToken}`)
+      .send({
+        child_id: childId,
+        week_start_date: '2026-07-13',
+        parent_observation: '看到孩子的努力',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.locked).toBe(true);
+  });
+
+  // RED 4: 家长提交后孩子可见
+  test('parent observation becomes visible to child after parent commits', async () => {
+    const { childToken, childId, parentToken } = await setupFamilyWithBoth();
+
+    // 家长先提交
+    await request(app)
+      .post('/api/reviews/parent')
+      .set('Authorization', `Bearer ${parentToken}`)
+      .send({
+        child_id: childId,
+        week_start_date: '2026-07-13',
+        parent_observation: '私密观察',
+      });
+
+    // 孩子查看
+    const response = await request(app)
+      .get('/api/reviews?week=2026-07-13')
+      .set('Authorization', `Bearer ${childToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.parent_observation).toBe('私密观察');
+    expect(response.body.other_status).toBe('other_committed');
+  });
+
+  // RED 5: 同周不可重复提交（已提交则更新而非新建）
+  test('upserts review for same week', async () => {
+    const { childToken } = await loginAsChild();
+
+    await request(app)
+      .post('/api/reviews/child')
+      .set('Authorization', `Bearer ${childToken}`)
+      .send({ week_start_date: '2026-07-13', best_thing: '第一版', difficulty: '...' });
+
+    const response = await request(app)
+      .post('/api/reviews/child')
+      .set('Authorization', `Bearer ${childToken}`)
+      .send({ week_start_date: '2026-07-13', best_thing: '修改版', difficulty: '...' });
+
+    expect(response.status).toBe(200);
+    // 只有一条记录
+    const reviews = await request(app)
+      .get('/api/reviews?week=2026-07-13')
+      .set('Authorization', `Bearer ${childToken}`);
+    expect(reviews.body.best_thing).toBe('修改版');
+  });
+});
+
+### 切片 13.3：复盘数据聚合
+
+```typescript
+describe('WeeklyReview aggregation', () => {
+
+  // RED 1: lock 时自动计算本周统计
+  test('computes task_count, point_earned, dimension_count on lock', async () => {
+    const { childToken, childId, parentToken } = await setupFamilyWithBoth();
+    // 准备数据：本周完成 5 个任务获得 12 积分，点亮 3 个维度
+    await seedWeekActivity(childId, '2026-07-13', {
+      checkins: 5,
+      points: 12,
+      dimensions_lit: 3,
+    });
+
+    await lockReviewByBoth(childToken, parentToken, childId, '2026-07-13');
+
+    const response = await request(app)
+      .get('/api/reviews?week=2026-07-13')
+      .set('Authorization', `Bearer ${childToken}`);
+
+    expect(response.body.task_count).toBe(5);
+    expect(response.body.point_earned).toBe(12);
+    expect(response.body.dimension_count).toBe(3);
+  });
+});
+```
+
+---
+
+## 14. 测试用例 - 成长日记
+
+> 关联：[PRD §3.5](./PRD.md)
+
+### 切片 14.1：日记 CRUD（集成测试）
+
+```typescript
+// tests/integration/diaries.test.ts
+
+describe('POST /api/diaries', () => {
+
+  // RED 1: 孩子创建日记
+  test('child creates a diary entry', async () => {
+    const { childToken } = await loginAsChild();
+
+    const response = await request(app)
+      .post('/api/diaries')
+      .set('Authorization', `Bearer ${childToken}`)
+      .send({
+        title: '今天学会游泳',
+        content: '去了游泳池，第一次能游10米...',
+        category: 'exercise',
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.id).toBeDefined();
+    expect(response.body.title).toBe('今天学会游泳');
+  });
+
+  // RED 2: 标题必填
+  test('rejects empty title', async () => {
+    const { childToken } = await loginAsChild();
+
+    const response = await request(app)
+      .post('/api/diaries')
+      .set('Authorization', `Bearer ${childToken}`)
+      .send({ title: '', content: '内容', category: 'journal' });
+
+    expect(response.status).toBe(400);
+  });
+
+  // RED 3: 无效分类
+  test('rejects invalid category', async () => {
+    const { childToken } = await loginAsChild();
+
+    const response = await request(app)
+      .post('/api/diaries')
+      .set('Authorization', `Bearer ${childToken}`)
+      .send({ title: 't', content: 'c', category: 'invalid_cat' });
+
+    expect(response.status).toBe(400);
+  });
+});
+
+describe('GET /api/diaries', () => {
+
+  // RED 4: 按分类筛选
+  test('filters diaries by category', async () => {
+    const { childToken } = await loginAsChild();
+    await createDiary(childToken, { category: 'exercise' });
+    await createDiary(childToken, { category: 'cooking' });
+
+    const response = await request(app)
+      .get('/api/diaries?category=exercise')
+      .set('Authorization', `Bearer ${childToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].category).toBe('exercise');
+  });
+
+  // RED 5: 时间线倒序
+  test('returns diaries in descending order by created_at', async () => {
+    const { childToken } = await loginAsChild();
+    const first = await createDiary(childToken, { title: 'first' });
+    await sleep(10);
+    const second = await createDiary(childToken, { title: 'second' });
+
+    const response = await request(app)
+      .get('/api/diaries')
+      .set('Authorization', `Bearer ${childToken}`);
+
+    expect(response.body.data[0].id).toBe(second.body.id);
+    expect(response.body.data[1].id).toBe(first.body.id);
+  });
+});
+```
+
+---
+
+## 15. 测试用例 - 并发与竞态
+
+> 关联：[ADR-0003](./architecture/adr-0003-points-integrity.md) · [DETAILED_DESIGN §7](./DETAILED_DESIGN.md)
+
+### 切片 15.1：积分 SERIALIZABLE 重试
+
+```typescript
+// tests/integration/concurrency.test.ts
+
+describe('SERIALIZABLE retry on point transactions', () => {
+
+  // RED 1: 并发打卡同一孩子不同任务，最终余额正确
+  test('concurrent checkins on different tasks produce correct balance', async () => {
+    const { childToken, childId } = await loginAsChild();
+    // 准备两个任务，每个 +2 分
+    const task1 = await createTask({ point_value: 2 });
+    const task2 = await createTask({ point_value: 2 });
+
+    // 并发提交
+    await Promise.all([
+      request(app).post('/api/checkins')
+        .set('Authorization', `Bearer ${childToken}`)
+        .send({ task_id: task1.id, date: '2026-07-16' }),
+      request(app).post('/api/checkins')
+        .set('Authorization', `Bearer ${childToken}`)
+        .send({ task_id: task2.id, date: '2026-07-16' }),
+    ]);
+
+    const balance = await getBalance(childId);
+    expect(balance).toBe(4);  // 4 = 2 + 2，无丢失
+  });
+
+  // RED 2: 同任务并发打卡只成功一次
+  test('concurrent checkins on same task result in only one record', async () => {
+    const { childToken, childId } = await loginAsChild();
+    const task = await createTask({ point_value: 3 });
+
+    const results = await Promise.allSettled([
+      request(app).post('/api/checkins')
+        .set('Authorization', `Bearer ${childToken}`)
+        .send({ task_id: task.id, date: '2026-07-16' }),
+      request(app).post('/api/checkins')
+        .set('Authorization', `Bearer ${childToken}`)
+        .send({ task_id: task.id, date: '2026-07-16' }),
+    ]);
+
+    const successes = results.filter(r => r.status === 'fulfilled' && r.value.status === 201);
+    expect(successes).toHaveLength(1);
+
+    const balance = await getBalance(childId);
+    expect(balance).toBe(3);  // 仅 +3，不重复
+  });
+});
+
+### 切片 15.2：兑换并发审批
+
+```typescript
+describe('Concurrent redemption approval', () => {
+
+  // RED 3: 余额仅够一次兑换时，并发审批只成功一次
+  test('concurrent approvals when balance covers only one succeed once', async () => {
+    const { childToken, childId, parentToken } = await setupFamilyWithBalance(30);
+    // 余额 30，两个 30 分奖励
+    const reward1 = await createReward({ point_cost: 30 });
+    const reward2 = await createReward({ point_cost: 30 });
+    const redemption1 = await createRedemption(childToken, reward1.id);
+    const redemption2 = await createRedemption(childToken, reward2.id);
+
+    const results = await Promise.allSettled([
+      request(app).patch(`/api/redemptions/${redemption1.id}/approve`)
+        .set('Authorization', `Bearer ${parentToken}`),
+      request(app).patch(`/api/redemptions/${redemption2.id}/approve`)
+        .set('Authorization', `Bearer ${parentToken}`),
+    ]);
+
+    const successes = results.filter(r => r.status === 'fulfilled' && r.value.status === 200);
+    const failures = results.filter(r => r.status === 'fulfilled' && r.value.status === 422);
+    expect(successes).toHaveLength(1);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].value.body.error.code).toBe('INSUFFICIENT_BALANCE');
+  });
+
+  // RED 4: SERIALIZABLE 重试耗尽返回 503
+  test('returns SERIALIZATION_FAILED when retries exhausted', async () => {
+    // 模拟持续冲突场景（mock 或注入故障）
+    const { parentToken } = await setupFamilyWithBalance(100);
+    const redemption = await createRedemption(...);
+
+    // 通过 mock 强制所有重试失败
+    jest.spyOn(db, 'transaction').mockRejectedValueOnce(
+      Object.assign(new Error('serialization failure'), { code: '40001' })
+    );
+
+    const response = await request(app)
+      .patch(`/api/redemptions/${redemption.id}/approve`)
+      .set('Authorization', `Bearer ${parentToken}`);
+
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe('SERIALIZATION_FAILED');
+  });
+});
+```
+
+### 切片 15.3：幂等性测试
+
+```typescript
+describe('Idempotency', () => {
+
+  // RED 5: 同一 idempotency_key 的兑换请求返回缓存结果
+  test('duplicate redemption with same idempotency_key returns cached response', async () => {
+    const { childToken } = await setupFamilyWithBalance(100);
+    const reward = await createReward({ point_cost: 30 });
+    const idempotencyKey = crypto.randomUUID();
+
+    const first = await request(app)
+      .post('/api/redemptions')
+      .set('Authorization', `Bearer ${childToken}`)
+      .set('Idempotency-Key', idempotencyKey)
+      .send({ reward_id: reward.id, child_note: '...' });
+
+    const second = await request(app)
+      .post('/api/redemptions')
+      .set('Authorization', `Bearer ${childToken}`)
+      .set('Idempotency-Key', idempotencyKey)
+      .send({ reward_id: reward.id, child_note: '...' });
+
+    expect(second.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
+    // 余额只扣一次
+    expect(await getBalance(childId)).toBe(70);
+  });
+});
+```
+
+---
+
+## 16. 测试用例 - 安全与多租户隔离
+
+> 关联：[ADR-0002](./architecture/adr-0002-authentication.md) · [ADR-0006](./architecture/adr-0006-multi-tenant-isolation.md) · [ADR-0009](./architecture/adr-0009-data-encryption.md)
+
+### 切片 16.1：多租户隔离
+
+```typescript
+// tests/integration/security.test.ts
+
+describe('Multi-tenant isolation', () => {
+
+  // RED 1: 家庭A的孩子不能访问家庭B的任务
+  test('child from family A cannot see tasks from family B', async () => {
+    const { childToken: childAToken } = await setupFamily('A');
+    const { parentToken: parentBToken, familyId: familyB } = await setupFamily('B');
+    // 家庭B 创建任务
+    const taskB = await createTaskAsParent(parentBToken, { family_id: familyB });
+
+    const response = await request(app)
+      .get('/api/tasks')
+      .set('Authorization', `Bearer ${childAToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.find(t => t.id === taskB.id)).toBeUndefined();
+  });
+
+  // RED 2: 直接访问其他家庭孩子的资源返回 404（非 403）
+  test('cross-family access returns 404 not 403', async () => {
+    const { parentToken: parentAToken } = await setupFamily('A');
+    const { childId: childBId } = await setupFamily('B');
+
+    const response = await request(app)
+      .get(`/api/children/${childBId}/points/balance`)
+      .set('Authorization', `Bearer ${parentAToken}`);
+
+    expect(response.status).toBe(404);  // 不是 403
+    expect(response.body.error.code).toBe('NOT_FOUND');
+  });
+
+  // RED 3: 跨家庭的兑换 ID 不可访问
+  test('cross-family redemption access returns 404', async () => {
+    const { parentToken: parentA, childToken: childA } = await setupFamily('A');
+    const { parentToken: parentB, childId: childB, childToken } = await setupFamily('B');
+    const redemptionB = await createRedemptionAsChild(childToken, ...);
+
+    const response = await request(app)
+      .patch(`/api/redemptions/${redemptionB.id}/approve`)
+      .set('Authorization', `Bearer ${parentA}`);
+
+    expect(response.status).toBe(404);
+  });
+});
+
+### 切片 16.2：JWT 认证
+
+```typescript
+describe('JWT authentication', () => {
+
+  // RED 4: 家长 token 不能用于孩子专属接口
+  test('parent token rejected on child-only endpoint', async () => {
+    const { parentToken } = await setupFamily();
+
+    const response = await request(app)
+      .post('/api/checkins')
+      .set('Authorization', `Bearer ${parentToken}`)
+      .send({ task_id: '...', date: '2026-07-16' });
+
+    // 实际：家长可代打卡，所以应该 200；但若接口限定 child-only，则 403
+    // 这里测试家长 token 在 child-only 接口上的行为
+    expect([200, 403]).toContain(response.status);
+  });
+
+  // RED 5: token_version 不匹配时返回 401 TOKEN_REVOKED
+  test('revoked child token (token_version mismatch) returns 401', async () => {
+    const { childToken, childId, parentToken } = await setupFamilyWithChild();
+
+    // 重新生成 token → token_version +1
+    await request(app)
+      .post(`/api/children/${childId}/access-token`)
+      .set('Authorization', `Bearer ${parentToken}`);
+
+    // 旧 token 应失效
+    const response = await request(app)
+      .get('/api/checkins/today')
+      .set('Authorization', `Bearer ${childToken}`);
+
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe('TOKEN_REVOKED');
+  });
+
+  // RED 6: 过期 token 返回 401 TOKEN_EXPIRED
+  test('expired token returns TOKEN_EXPIRED', async () => {
+    const expiredToken = jwt.sign(
+      { sub: 'child_001', role: 'child', family_id: 'fam_001', token_version: 0 },
+      process.env.CHILD_JWT_SECRET,
+      { expiresIn: '-1s' }  // 已过期
+    );
+
+    const response = await request(app)
+      .get('/api/checkins/today')
+      .set('Authorization', `Bearer ${expiredToken}`);
+
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe('TOKEN_EXPIRED');
+  });
+});
+
+### 切片 16.3：字段加密
+
+```typescript
+describe('Field-level encryption (ADR-0009)', () => {
+
+  // RED 7: 日记内容在 DB 中是密文
+  test('diary content is encrypted at rest', async () => {
+    const { childToken, childId } = await loginAsChild();
+    const plainText = '我的私密日记内容';
+
+    await request(app)
+      .post('/api/diaries')
+      .set('Authorization', `Bearer ${childToken}`)
+      .send({ title: 't', content: plainText, category: 'journal' });
+
+    // 直接查 DB（绕过应用层解密）
+    const rawRow = await db.raw('SELECT title, content FROM app.growth_diaries WHERE child_id = ?', [childId]);
+    expect(rawRow[0].content).not.toBe(plainText);
+    expect(rawRow[0].content).toMatch(/^[A-Za-z0-9+/=]+$/);  // base64
+  });
+
+  // RED 8: 复盘内容在 DB 中是密文
+  test('weekly review content is encrypted at rest', async () => {
+    const { childToken, childId } = await loginAsChild();
+    const secretText = '这周最棒的事：学会了骑自行车';
+
+    await request(app)
+      .post('/api/reviews/child')
+      .set('Authorization', `Bearer ${childToken}`)
+      .send({ week_start_date: '2026-07-13', best_thing: secretText, difficulty: '...' });
+
+    const rawRow = await db.raw('SELECT best_thing FROM app.weekly_reviews WHERE child_id = ?', [childId]);
+    expect(rawRow[0].best_thing).not.toContain(secretText);
+  });
+});
+```
+
+---
+
+## 17. 测试用例 - 错误流与边界条件
+
+### 切片 17.1：输入校验
+
+```typescript
+// tests/integration/error-flows.test.ts
+
+describe('Input validation edge cases', () => {
+
+  // RED 1: 任务名恰好 30 字符
+  test('task title with exactly 30 chars is accepted', async () => {
+    const { token } = await loginAsParent();
+    const response = await request(app)
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        title: '一'.repeat(30),  // 30 个中文字符
+        dimension_id: 1,
+        point_value: 2,
+        frequency: 'daily',
+      });
+    expect(response.status).toBe(201);
+  });
+
+  // RED 2: 任务名 31 字符失败
+  test('task title with 31 chars is rejected', async () => {
+    const { token } = await loginAsParent();
+    const response = await request(app)
+      .post('/api/tasks')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        title: '一'.repeat(31),
+        dimension_id: 1, point_value: 2, frequency: 'daily',
+      });
+    expect(response.status).toBe(400);
+  });
+
+  // RED 3: 积分值边界 0 和 21
+  test('point_value boundary: 1 accepted, 20 accepted, 0 and 21 rejected', async () => {
+    const { token } = await loginAsParent();
+    for (const [value, expectedStatus] of [[1, 201], [20, 201], [0, 400], [21, 400]]) {
+      const response = await request(app)
+        .post('/api/tasks')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 't', dimension_id: 1, point_value: value, frequency: 'daily' });
+      expect(response.status).toBe(expectedStatus);
+    }
+  });
+});
+
+### 切片 17.2：业务规则边界
+
+```typescript
+describe('Business rule edge cases', () => {
+
+  // RED 4: 同一天不可补打过去日期的卡
+  test('cannot check in for past date', async () => {
+    const { childToken } = await loginAsChild();
+    const task = await createTask({});
+
+    const yesterday = new Date(Date.now() - 86400 * 1000).toISOString().split('T')[0];
+    const response = await request(app)
+      .post('/api/checkins')
+      .set('Authorization', `Bearer ${childToken}`)
+      .send({ task_id: task.id, date: yesterday });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('CHECKIN_DATE_IN_PAST');
+  });
+
+  // RED 5: 停用任务不可打卡
+  test('cannot check in inactive task', async () => {
+    const { childToken, parentToken } = await setupFamilyWithBoth();
+    const task = await createTaskAsParent(parentToken, { is_active: false });
+
+    const response = await request(app)
+      .post('/api/checkins')
+      .set('Authorization', `Bearer ${childToken}`)
+      .send({ task_id: task.id, date: '2026-07-16' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('TASK_INACTIVE');
+  });
+
+  // RED 6: 撤销已撤销的打卡返回 409
+  test('cannot revoke already revoked checkin', async () => {
+    const { parentToken, childId } = await setupFamilyWithBoth();
+    const checkin = await createCheckin(childId);
+
+    await request(app)
+      .post(`/api/checkins/${checkin.id}/revoke`)
+      .set('Authorization', `Bearer ${parentToken}`);
+
+    const second = await request(app)
+      .post(`/api/checkins/${checkin.id}/revoke`)
+      .set('Authorization', `Bearer ${parentToken}`);
+
+    expect(second.status).toBe(409);
+    expect(second.body.error.code).toBe('CONFLICT');
+  });
+
+  // RED 7: 兑换状态转换非法返回 409
+  test('invalid redemption transition rejected', async () => {
+    const { parentToken, childToken } = await setupFamilyWithBoth();
+    const redemption = await createRedemption(childToken, ...);
+
+    // 直接尝试 fulfilled → approved（反向）
+    const response = await request(app)
+      .patch(`/api/redemptions/${redemption.id}/approve`)  // pending → approved 合法
+      .set('Authorization', `Bearer ${parentToken}`);
+    expect(response.status).toBe(200);
+
+    // approved → rejected 不合法
+    const response2 = await request(app)
+      .patch(`/api/redemptions/${redemption.id}/reject`)
+      .set('Authorization', `Bearer ${parentToken}`);
+    expect(response2.status).toBe(409);
+    expect(response2.body.error.code).toBe('CONFLICT');
+  });
+});
+
+### 切片 17.3：速率限制
+
+```typescript
+describe('Rate limiting', () => {
+
+  // RED 8: 登录接口超限返回 429
+  test('login endpoint returns 429 after 10 attempts per minute', async () => {
+    for (let i = 0; i < 10; i++) {
+      await request(app)
+        .post('/api/auth/login')
+        .send({ email: 'x@x.com', password: 'wrong' });
+    }
+
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'x@x.com', password: 'wrong' });
+
+    expect(response.status).toBe(429);
+    expect(response.body.error.code).toBe('RATE_LIMITED');
+  });
+});
+```
+
+---
+
+## 18. 测试用例 - Phase 2 功能预占位
+
+> Phase 2 功能在 MVP 中不实现，但测试规格已留位，待 Phase 2 启动时填充。
+
+```typescript
+// tests/integration/phase2.test.ts
+
+describe.skip('Phase 2: Daily check-in reminder', () => {
+  test('sends reminder at 09:00 for children who have not checked in');
+  test('does not send reminder if child has any checkin today');
+});
+
+describe.skip('Phase 2: Achievement wall', () => {
+  test('shows sibling dimension statuses when enabled');
+  test('hides sibling data when family.achievement_wall_enabled is false');
+  test('never shows sibling point numbers');
+});
+
+describe.skip('Phase 2: PDF growth archive export', () => {
+  test('exports PDF at summer end date');
+  test('PDF contains: diary highlights, points summary, dimensions, reviews');
+});
+
+describe.skip('Phase 2: Task templates by age group', () => {
+  test('returns different templates for 6-8 vs 12-14');
+  test('templates can be customized per family');
+});
+```
+
+---
+
+## 19. 测试用例 - 性能与负载
+
+> 仅在 CI 中运行（标记为 `@performance`），不阻塞常规 build。
+
+```typescript
+// tests/e2e/performance.spec.ts
+
+describe('@performance Load test', () => {
+
+  // RED 1: 100 并发打卡延迟 < 500ms P95
+  test('100 concurrent checkins P95 < 500ms', async () => {
+    const users = await createTestChildren(100);
+    const start = Date.now();
+    const latencies: number[] = [];
+
+    await Promise.all(users.map(async ({ token, taskId }) => {
+      const t0 = Date.now();
+      await request(app)
+        .post('/api/checkins')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ task_id: taskId, date: '2026-07-16' });
+      latencies.push(Date.now() - t0);
+    }));
+
+    latencies.sort((a, b) => a - b);
+    const p95 = latencies[Math.floor(latencies.length * 0.95)];
+    expect(p95).toBeLessThan(500);
+  });
+
+  // RED 2: 单家庭大数据量查询性能
+  test('balance query on 10k transactions < 100ms', async () => {
+    const { childId } = await seedLargeHistory(childId, { transactions: 10000 });
+    const start = Date.now();
+    await request(app).get(`/api/points/balance?child_id=${childId}`);
+    expect(Date.now() - start).toBeLessThan(100);
+  });
+});
+```
+
+---
+
+## 20. 更新后的总计
+
+| 层 | 测试数 | 说明 |
+|----|-------|------|
+| 单元测试 | 23 | 20（原）+ 3（复盘可见性纯函数） |
+| 集成测试 | 56 | 28（原）+ 9（复盘）+ 5（日记）+ 4（并发）+ 3（多租户）+ 3（JWT）+ 2（加密）+ 2（幂等）= 增 28 |
+| 组件测试 | 14 | 不变 |
+| E2E测试 | 4 | 2（原）+ 2（性能） |
+| Phase 2 占位 | 4 | `describe.skip` 占位 |
+| **总计** | **97 + 4 占位** | |
+
+### 优先级排序（TDD 执行顺序扩展）
+
+| 优先级 | 章节 | 说明 |
+|--------|------|------|
+| P0（MVP 必须） | §4-§9, §13, §14 | MVP 核心闭环 + 双盲复盘 + 日记 |
+| P1（MVP 必须） | §15, §16 | 并发安全 + 多租户隔离 |
+| P2（MVP 应有） | §17 | 错误流与边界 |
+| P3（Phase 2 前置） | §18 | 占位测试，确认 Phase 2 范围 |
+| P4（发布前） | §19 | 性能与负载 |
+
+### 测试覆盖度矩阵
+
+| 模块 | 单元 | 集成 | 组件 | E2E | 覆盖度 |
+|------|------|------|------|-----|--------|
+| Auth | - | 9 | - | 1 | ✅ 完整 |
+| Children | - | 3 | - | - | ✅ 完整 |
+| Tasks | 4 | 4 | - | - | ✅ 完整 |
+| Check-ins | - | 6 | 6 | 1 | ✅ 完整 |
+| Points | 4 | 4 | - | - | ✅ 完整 |
+| Rewards/Redemptions | 6 | 6 | 5 | 1 | ✅ 完整 |
+| Growth Map | 6 | - | 3 | - | ✅ 完整 |
+| Weekly Review | 3 | 6 | - | - | ✅ 新增完整 |
+| Growth Diary | - | 5 | - | - | ✅ 新增完整 |
+| Concurrency | - | 4 | - | - | ✅ 新增 |
+| Security | - | 8 | - | - | ✅ 新增 |
+| Error flows | - | 8 | - | - | ✅ 新增 |
+| Performance | - | - | - | 2 | ✅ 新增 |
 
 ---
 

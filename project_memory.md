@@ -68,3 +68,106 @@
 - extract_content2.ps1 - 第二版提取脚本
 - article_content.txt - 提取的文本内容
 - article_extracted.txt - 第一版提取结果
+
+---
+
+## 2026-07-16 02:30 — 开发前置准备完成
+
+### 本次工作目标
+根据用户原始指令"请根据PRD完善TDD_SPEC，并做详细设计和架构图、API文档等开发前置准备动作"，完成开发前置文档套件：
+- 10 个 ADR（架构决策记录）
+- 主架构文档（ARCHITECTURE.md，含 C4 三层图）
+- 详细设计文档（DETAILED_DESIGN.md，12 章节）
+- API 文档（API.md，18 章节）
+- TDD_SPEC.md 完善（v1.0 64 测试 → v2.0 97+4 占位测试）
+- 13 个可执行 tracer-bullet ticket
+
+### 产出文件清单
+
+#### 架构决策记录（10 个 ADR，位于 `docs/architecture/`）
+1. adr-0001-tech-stack.md — 技术栈选型（React 18 + TS + Node 20 + Fastify 4 + PostgreSQL 16，拒绝 Python/Next.js/Java）
+2. adr-0002-authentication.md — 双 JWT 认证（家长/孩子分离 secret + token_version 即时吊销）
+3. adr-0003-points-integrity.md — 积分完整性（SERIALIZABLE + UNIQUE + CHECK + balance_after 推导）
+4. adr-0004-redemption-state-machine.md — 兑换状态机（pending→approved→fulfilled / rejected）
+5. adr-0005-double-blind-review.md — 每周复盘双盲机制（双方提交后自动 lock）
+6. adr-0006-multi-tenant-isolation.md — 多租户隔离（family_id 行级过滤 + 跨家庭 404）
+7. adr-0007-frontend-state.md — 前端状态（TanStack Query + Zustand + React Router 三层）
+8. adr-0008-deployment-topology.md — 部署拓扑（Vercel + Railway + Neon + GitHub Actions）
+9. adr-0009-data-encryption.md — 字段级加密（AES-256-GCM + HKDF-SHA256 派生 per-row key）
+10. adr-0010-background-jobs.md — 后台作业（node-cron in-process + withRetry 指数退避）
+
+#### 主文档（位于 `docs/`）
+- `ARCHITECTURE.md`（~1100 行）— C4 L1/L2/L3 图、模块边界、数据流、有限上下文、ADR 索引
+- `API.md`（~900 行）— 18 章节，OpenAPI 风格，30+ 错误码字典
+- `DETAILED_DESIGN.md`（~2070 行）— 12 章节：
+  1. 领域模型（ER 图 + 10 实体）
+  2. 状态机（兑换 / Child AccessToken / WeeklyReview 提交）
+  3. 核心时序图（打卡 / 兑换审批 / 双盲复盘 / Token 验证）
+  4. 关键算法（余额推导 / 维度点亮 / 任务可见性 / SERIALIZABLE 重试 / 字段加密）
+  5. 数据完整性约束（11 CHECK + 7 UNIQUE + 3 triggers + 索引策略）
+  6. 安全设计（认证矩阵 / 路由权限 / 多租户 / Zod / 限流 / Helmet / 日志脱敏 / 字段加密）
+  7. 并发控制（隔离级别选择 / SERIALIZABLE 重试 / 乐观并发 / 幂等性 / 锁粒度 / 死锁防护）
+  8. 性能设计（性能预算 / 前端 / 后端 / DB / 缓存策略 / 资源限制）
+  9. 可观测性设计（日志分层 / 结构化日志 / Metrics / 链路追踪 / 健康检查 / 告警渠道）
+  10. 错误处理与重试（统一响应格式 / 13 个错误码 / 自定义错误类 / 重试策略 / 错误边界）
+  11. 数据库 Schema 完整定义（Drizzle ORM 全部 12 张表）
+  12. 关键代码骨架（项目目录 / 后端入口 / Fastify app / 前端入口 / Repository / Service / 后台任务）
+
+#### TDD_SPEC.md v2.0
+- 原 v1.0：64 测试（20 unit + 28 integration + 14 component + 2 E2E）
+- 新 v2.0：97 + 4 占位（23 unit + 56 integration + 14 component + 4 E2E + 4 Phase 2 占位）
+- 新增章节：
+  - §13 每周复盘（双盲机制）— 3 unit + 6 integration
+  - §14 成长日记 — 5 integration
+  - §15 并发与竞态 — 4 integration（含 SERIALIZABLE 重试 / 幂等性）
+  - §16 安全与多租户隔离 — 3 多租户 + 3 JWT + 2 加密 = 8 integration
+  - §17 错误流与边界条件 — 8 integration
+  - §18 Phase 2 功能预占位 — 4 describe.skip
+  - §19 性能与负载 — 2 E2E
+  - §20 更新后的总计 + 优先级排序 + 覆盖度矩阵
+
+#### Tracer-bullet Tickets（位于 `.scratch/growth-points-bank-mvp/issues/`）
+13 个垂直切片 ticket，按依赖顺序编号：
+
+| # | 标题 | 阻塞于 |
+|---|------|--------|
+| 01 | Project Scaffolding | — |
+| 02 | Database Schema and Migrations | 01 |
+| 03 | Auth and Multi-Tenancy Foundation | 02 |
+| 04 | Family and Children CRUD | 03 |
+| 05 | Tasks Management | 04 |
+| 06 | Daily Check-In and Points Ledger | 05 |
+| 07 | Rewards and Redemption Flow | 06 |
+| 08 | Growth Map and Check-In Frontend | 06 |
+| 09 | Weekly Review (Double-Blind) | 06 |
+| 10 | Growth Diary with Field Encryption | 04 |
+| 11 | Background Jobs Scheduler | 09, 07 |
+| 12 | Security Hardening and Audit Log | 03 |
+| 13 | Deployment and CI/CD | 01, 02, 06, 08 |
+
+### 关键技术决策（自 grilling 内化）
+- **不使用 SQLite**：改用 PGlite（in-memory PostgreSQL），与生产 PostgreSQL 方言一致，避免测试/生产行为漂移
+- **不引入 Redis**：MVP 内存限流即可，Phase 2 再上 Redis 分布式锁
+- **不引入 Prometheus/Grafana**：MVP 仅 pino + Sentry，Phase 2 引入
+- **Phase 2 占位测试**：日打卡提醒 / 成就墙 / PDF 导出 / 任务模板按年龄段，使用 `describe.skip` 留位
+- **跨家庭访问返回 404 而非 403**：防资源探测
+- **余额不维护 balance 列**：从 `point_transactions.balance_after` 推导，单一可信源
+- **字段加密仅敏感文本**：日记/复盘文本加密；积分/任务元数据/奖励元数据不加密（便于聚合查询）
+
+### 已知风险（来自风险登记册，详见 ARCHITECTURE.md）
+1. Railway Free Tier 512MB RAM 限制 → 监控 + 控制日志输出
+2. Neon 免费分支数限制 → 预览环境需及时清理
+3. PGlite 与生产 PostgreSQL 行为差异（如 trigger 支持有限）→ 关键 trigger 在集成测试用真 PostgreSQL 容器
+4. node-cron in-process 在多实例部署时重复触发 → MVP 单实例；Phase 2 上分布式锁
+5. 加密字段无法在 DB 层做 LIKE 查询 → 全文搜索 Phase 2 通过解密后扫描
+
+### 下一步建议
+1. **必须**：在新 session 中运行 `/architecture-review`（不能在本 session 跑，per skill 规则）验证架构一致性
+2. **建议**：完成 review 后从 ticket #01 (Project Scaffolding) 开始实施，使用 `/implement` 一个个推进
+3. **建议**：每个 ticket 完成后用 `/code-review` 审查
+4. **建议**：MVP 全部 ticket 完成后运行 `/release-checklist` 做发布前清单
+
+### 待清理临时文件
+- `e:\git\` 根目录下的微信文章抓取脚本（等用户统一指示后清理）
+
+
