@@ -109,12 +109,47 @@ Token verification (every protected route):
 ### Database Schema Additions
 
 ```sql
--- Child table already has access_token + token_expires_at per PRD §5.2
--- Add token_version for instant revocation:
+-- Child table already has access_token + token_expires_at per PRD §5.2.
+-- Add token_version for instant revocation.
 
 ALTER TABLE children ADD COLUMN token_version INTEGER NOT NULL DEFAULT 1;
 CREATE INDEX idx_children_access_token ON children(access_token) WHERE access_token IS NOT NULL;
 ```
+
+### Child access_token Storage (Conflict #6 resolution, 2026-07-16)
+
+**Decision**: `children.access_token` is stored as **HMAC-SHA256 hash** (not plaintext, not bcrypt/argon2).
+
+**Rationale**: Auth flow requires O(1) lookup `WHERE access_token = $1` (unlike passwords which verify per-row with argon2). HMAC-SHA256 with server-side `AUTH_HMAC_SECRET` provides:
+- Constant-time lookup via hash index
+- DB exfiltration protection (attacker cannot recover plaintext tokens without the secret)
+- Cheap rotation (change secret + re-hash all tokens)
+
+**Implementation**:
+```typescript
+// packages/shared/src/domain/auth-token.ts
+import { createHmac } from 'crypto';
+
+const AUTH_HMAC_SECRET = process.env.AUTH_HMAC_SECRET!;
+assert(AUTH_HMAC_SECRET.length >= 32, 'AUTH_HMAC_SECRET must be >= 32 chars');
+
+export function hashAccessToken(plaintext: string): string {
+  return createHmac('sha256', AUTH_HMAC_SECRET).update(plaintext).digest('hex');
+}
+
+// On child creation / token rotation:
+//   INSERT INTO children (..., access_token, ...) VALUES (..., hashAccessToken(plaintext), ...)
+// On child auth (GET /child/auth?token=...):
+//   SELECT * FROM children WHERE access_token = hashAccessToken($1)
+```
+
+**Token lifecycle**:
+- Generated as `crypto.randomUUID()` (122 bits entropy) on child creation
+- Parent sees plaintext once (displayed in UI for sharing via link/QR)
+- Stored only as HMAC hash in DB
+- Rotation: parent clicks "regenerate" → new plaintext → new hash → old token invalidated
+
+**Resolution note**: This section resolves the cross-ADR conflict where ADR-0009 §"What's Encrypted vs Plain" falsely claimed `access_token` was "Already hashed (ADR-0002)". ADR-0002 now explicitly specifies HMAC-SHA256 hashing. ADR-0009 has been updated to reference this section accurately.
 
 ### Password Policy
 - Minimum 8 characters

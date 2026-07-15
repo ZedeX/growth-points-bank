@@ -75,7 +75,13 @@ CREATE INDEX idx_point_tx_child_created ON point_transactions(child_id, created_
 
 -- Forbid duplicate point transactions for the same source
 -- (prevents "check-in gives points twice" bug)
-CREATE UNIQUE INDEX uq_point_tx_source ON point_transactions(source_type, source_id);
+-- Conflict #4 resolution (2026-07-16): include child_id + partial predicate
+-- so that revocation rows (negative amount, source_id may collide with earn rows)
+-- and multi-tenant rows don't collide globally. The unique scope is per-child
+-- per-source; the WHERE clause excludes any future non-tracked source_types.
+CREATE UNIQUE INDEX uq_point_tx_source
+  ON point_transactions(child_id, source_type, source_id)
+  WHERE source_type IN ('task', 'reward', 'revocation');
 ```
 
 ### Insert Pattern: SELECT-then-INSERT inside SERIALIZABLE
@@ -145,7 +151,10 @@ export async function withSerializableRetry<T>(
     } catch (err) {
       if (isSerializationError(err) && attempt < MAX_RETRIES) {
         attempt++;
-        await sleep(50 * attempt);  // linear backoff
+        // Conflict #3 resolution (2026-07-16): exponential backoff aligned with
+        // ADR-0010 (background jobs) and DETAILED_DESIGN §6.5. Linear backoff
+        // is insufficient under contention; exponential avoids retry storms.
+        await sleep(50 * Math.pow(2, attempt));  // exponential backoff: 100ms, 200ms, 400ms
         continue;
       }
       throw err;
@@ -228,7 +237,7 @@ SELECT * FROM running WHERE balance_after <> expected;
 - `balance_after` denormalization requires the SELECT-then-INSERT pattern (no pure single-INSERT)
 
 ### Risks
-- **Risk**: Serialization failure storm under high concurrency → **Mitigation**: `withSerializableRetry` with linear backoff; for MVP scale (one family), contention is minimal
+- **Risk**: Serialization failure storm under high concurrency → **Mitigation**: `withSerializableRetry` with exponential backoff (50ms × 2^attempt); for MVP scale (one family), contention is minimal. Aligned with ADR-0010 and DETAILED_DESIGN §6.5 (Conflict #3 resolution, 2026-07-16).
 - **Risk**: Application bug creates duplicate point_transactions for one check-in → **Mitigation**: UNIQUE(source_type, source_id) constraint; check-in id used as source_id
 - **Risk**: Long-running transaction holds locks → **Mitigation**: Keep transactions < 50ms; no external calls inside tx
 - **Risk**: Migration drops CHECK constraints accidentally → **Mitigation**: Drizzle schema is source of truth; CI checks schema diff

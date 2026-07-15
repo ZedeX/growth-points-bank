@@ -242,7 +242,7 @@ async function rotateKey() {
 | children | name | ✅ | PII — child's name |
 | children | avatar | ✅ | URL may contain child ID |
 | children | age_group | ❌ | Categorical (3 values); not sensitive |
-| children | access_token | ✅ | Already hashed (ADR-0002) |
+| children | access_token | ✅ | HMAC-SHA256 hashed for O(1) lookup (ADR-0002 §Child access_token Storage); not field-encrypted because hashing is sufficient |
 | children | token_expires_at | ❌ | Timestamp; not sensitive |
 | growth_diaries | title | ✅ | May contain identifying info |
 | growth_diaries | content | ✅ | Personal reflections |
@@ -266,6 +266,23 @@ ALTER TABLE children ADD COLUMN name_search_hmac TEXT;
 ```
 
 **MVP decision**: Skip `name_search_hmac`. Family has at most a handful of children; list-all + client-side filter is fine.
+
+### Phased Rollout (Conflict #7 resolution, 2026-07-16)
+
+ADR-0005 §"Field-Level Encryption at Rest (Defense in Depth)" explicitly defers cryptographic field-level encryption of `weekly_reviews` to Phase 2 ("MVP simplification: Skip the field-level encryption for now"). ADR-0009 §"What's Encrypted vs Plain" originally listed `weekly_reviews` review-text fields as ✅ encrypted, which contradicted ADR-0005's "skip" stance. This subsection reconciles the two ADRs by defining a phased rollout:
+
+| Phase | Tables Encrypted at App Layer | Tables NOT Encrypted (access-control only) |
+|-------|-------------------------------|---------------------------------------------|
+| **Phase 1 (MVP)** | `children` (name, avatar), `growth_diaries` (title, content) | `weekly_reviews` (best_thing, difficulty, child_request, parent_observation) — protected by ADR-0005's API-layer access control + CHECK constraint + audit log |
+| **Phase 2 (Post-MVP, if threat model warrants)** | All Phase 1 tables **plus** `weekly_reviews` review-text fields | (none — full coverage) |
+
+**Phase 1 justification**: `weekly_reviews` already has a layered defense (CHECK constraint preventing invalid commit states, API-layer access control enforcing double-blind semantics, audit log of every read). Field-level AES-256-GCM would add defense-in-depth but is not required for the MVP threat model (single family, trusted DBA). `children` and `growth_diaries` have no equivalent API-layer gate — they must be encrypted at rest from day 1.
+
+**Phase 2 trigger criteria**: (a) multiple families share the same Neon instance, OR (b) audit log detects attempted unauthorized reads, OR (c) compliance review requires cryptographic guarantee for review content.
+
+**Migration path (Phase 1 → Phase 2)**: Run the `rotate-encryption-key.ts` script with a modified `tables` array that includes `weekly_reviews`. The script already supports re-encrypting arbitrary tables — no schema migration needed, only a backfill of NULL→encrypted values for existing rows.
+
+**Cross-ADR alignment**: This phased approach aligns ADR-0009 with ADR-0005's deferral. The "What's Encrypted vs Plain" table above reflects the Phase 1 state; in Phase 2, the `weekly_reviews` rows will be updated from ✅ (Phase 2 target) to ✅ (implemented). Both ADRs now agree that weekly_reviews field-level encryption is deferred, not skipped.
 
 ## Alternatives Considered
 
@@ -335,6 +352,6 @@ N/A — encryption applied from day 1. No existing plaintext data to migrate.
 - [ ] All TDD_SPEC encryption tests pass (to be added)
 
 ## Related Decisions
-- ADR-0002 (Auth — child `access_token` already hashed with Argon2)
+- ADR-0002 (Auth — child `access_token` HMAC-SHA256 hashed, see §"Child access_token Storage")
 - ADR-0005 (Double-Blind Review — could integrate field-level encryption in Phase 2)
 - ADR-0006 (Multi-Tenant Isolation — complementary defense)

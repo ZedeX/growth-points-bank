@@ -10,7 +10,7 @@ Accepted
 
 | Field | Value |
 |-------|-------|
-| Stack | PostgreSQL 16 + crypto.subtle (Web Crypto API on Node 20) |
+| Stack | PostgreSQL 16 + Node.js `crypto` module (SHA-256 commitment) |
 | Domain | Domain Logic / Cryptographic Commitment |
 | Knowledge Risk | LOW — SHA-256 commitment scheme is foundational cryptography |
 | References Consulted | PRD §3.3 (每周家庭复盘), §9.4 (每周复盘双盲) |
@@ -204,6 +204,12 @@ The full cryptographic scheme can be added in Phase 2 if threat model warrants.
 
 ```sql
 CREATE TABLE weekly_review_access_log (
+  -- Conflict #5 resolution (2026-07-16): BIGSERIAL deviates from the project's
+  -- UUID PK convention (ADR-0001 §"Schema Conventions"). Justification:
+  -- audit-log rows are append-only, never cross-referenced by external tables,
+  -- never sent to the client, and write-throughput matters more than GUID
+  -- randomness. A 64-bit counter also yields a smaller index footprint than
+  -- UUID for a table expected to grow into millions of rows.
   id           BIGSERIAL PRIMARY KEY,
   review_id    UUID NOT NULL REFERENCES weekly_reviews(id),
   reader_role  TEXT NOT NULL CHECK (reader_role IN ('child', 'parent', 'system')),

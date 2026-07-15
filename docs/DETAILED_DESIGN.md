@@ -1684,6 +1684,17 @@ export const auditLogs = appSchema.table('audit_logs', {
 
 ### 12.1 项目目录结构
 
+> **⚠️ 修订 (2026-07-16, Conflict #2 resolution)**: 原单包 `src/server/...` 布局**已废弃**。权威目录结构以 **ARCHITECTURE.md §B** 的 pnpm workspace monorepo 为准。
+
+**新结构摘要** (详见 ARCHITECTURE.md §B):
+- `apps/web/` — React SPA (Vercel): pages, components, queries, stores, api, styles
+- `apps/api/` — Fastify Backend (Railway): modules/{auth,family,children,tasks,...}, db, crypto, jobs, middleware, utils
+- `packages/shared/` — 共享类型 + Zod schemas + 领域纯函数 + errors
+- `tests/` — unit, integration, component, e2e
+- `pnpm-workspace.yaml` at root
+
+**下方旧结构 (已废弃，勿用于实现)**:
+
 ```
 growth-points-bank/
 ├── docs/                       # 文档（已完成）
