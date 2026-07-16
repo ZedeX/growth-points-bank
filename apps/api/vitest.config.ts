@@ -13,6 +13,20 @@ export default defineConfig({
     environment: 'node',
     include: ['test/**/*.test.ts'],
     globalSetup: ['test/globalSetup.ts'],
+    // All test files share a single database pool (module-level singleton
+    // in src/server/db/client.ts) and a single Fastify app instance per
+    // file. Running files in parallel causes TRUNCATE-vs-INSERT lock
+    // contention and cross-file data cleanup, which manifests as every
+    // beforeEach hook timing out. Force serial execution.
+    fileParallelism: false,
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        // Run all test files in a single fork so the db pool singleton
+        // is shared exactly once across the whole suite.
+        singleFork: true,
+      },
+    },
     // CI runners are slower; give hooks and tests more room.
     hookTimeout: 60_000,
     testTimeout: 30_000,
