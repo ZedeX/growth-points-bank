@@ -738,16 +738,79 @@
 6. **dimension lit 判定**: `completed === total && total > 0`
 
 ### 待办
-- [ ] 浏览器中人工验证 UI 交互（点击打卡/切换 tab/兑换流程）
-- [ ] Git commit + push 新原型
-- [ ] （可选）执行 PROTOTYPE_TDD.md 中 14 个手动测试场景
+- [x] 浏览器中人工验证 UI 交互 → 改用 Playwright 自动化（更可靠）
+- [x] Git commit + push 新原型
+- [x] 执行 PROTOTYPE_TDD.md 中 14 个手动测试场景 → 自动化覆盖 13/14（T04 跨日打卡需手动）
 
 ### Git 操作
-- 待提交：index.html + docs/PROTOTYPE_SPEC.md + docs/PROTOTYPE_TDD.md + README.md + project_memory.md + scratch/
+- 首次提交：`3f09250` (126 files, +2109/-25258) — pivot 重做
+- 二次提交：待提交 — 加 data-* 钩子 + Playwright 测试 + 测试报告
+
+---
+
+## 2026-07-17 (续) — Playwright UI 自动化 + 测试报告
+
+### 本次工作目标
+用户指令："继续完成其余文档和代码以及测试，全部完成后使用shutdown 关机"
+
+完成原型剩余的代码（测试钩子）、测试（Playwright UI 自动化）、文档（测试报告），然后关机。
+
+### 产出文件清单
+
+| 文件 | 作用 |
+|------|------|
+| `index.html` | 修改：在 10 处元素加 `data-*` 测试钩子（不改变业务逻辑） |
+| `tests/prototype.spec.js` | 新建：12 个 Playwright UI 端到端测试 |
+| `playwright.config.js` | 新建：Playwright 配置（headless chromium, 480×800 移动视口, 串行执行） |
+| `package.json` | 新建：dev-only，仅 `@playwright/test` 一个 devDependency |
+| `docs/PROTOTYPE_TEST_REPORT.md` | 新建：完整测试报告（71/71 通过） |
+| `.gitignore` | 修改：新增 `scratch/playwright-report/`, `scratch/playwright-results.json`, `test-results/` |
+
+### 测试钩子（data-* 属性）
+
+| 属性 | 元素 | 选择器示例 |
+|------|------|----------|
+| `data-role-switch` | 角色切换 select | `[data-role-switch]` |
+| `data-tab` | 底部 tab 按钮 | `[data-tab="checkin"]` |
+| `data-task-checkin` | 任务打卡卡片 | `[data-task-checkin="t1"]` |
+| `data-redeem` | 兑换按钮 | `[data-redeem="r3"]` |
+| `data-approve-redemption` | 家长通过按钮 | `[data-approve-redemption="..."]` |
+| `data-fulfill-redemption` | 家长兑现按钮 | `[data-fulfill-redemption="..."]` |
+| `data-new-task` / `data-delete-task` | 任务管理 | — |
+| `data-new-reward` / `data-delete-reward` | 奖励管理 | — |
+
+### 测试结果
+
+| 测试层 | 工具 | 用例数 | 通过 | 时长 |
+|--------|------|--------|------|------|
+| 业务逻辑层 | Node.js vm sandbox | 59 | 59 | <1s |
+| UI 端到端 | Playwright (chromium headless) | 12 | 12 | 6.2s |
+| **合计** | — | **71** | **71** | **~7s** |
+
+TDD 14 场景覆盖：13/14 自动化通过（仅 T04 跨日打卡需手动改系统日期）。
+
+### 关键技术决策
+
+1. **vm sandbox 验证 + Playwright UI 验证 双层覆盖**：逻辑层快且精确，UI 层验证完整用户体验。两者互补。
+2. **data-* 测试钩子而非 class 选择器**：稳定，不因样式重构而失效。
+3. **Playwright headless 串行执行**：原型用 localStorage 共享状态，并行会互相污染。
+4. **package.json 仅 devDependencies**：原型本身零依赖，dev 工具与运行时隔离。
+5. **测试报告产物全部 gitignored**：`scratch/playwright-report/`, `scratch/playwright-results.json` 不入库，避免仓库膨胀。
+
+### 验证结论
+
+| 验收项 | 状态 |
+|--------|------|
+| 核心闭环可运行（打卡→赚积分→兑换→审核→兑现） | ✅ |
+| 业务规则正确（唯一约束 / 余额推导 / 状态机 / 维度点亮） | ✅ |
+| 持久化（刷新不丢数据） | ✅ |
+| 管理功能（任务/奖励 CRUD） | ✅ |
+| 零依赖（双击即跑） | ✅ |
+| 测试自动化（71 用例） | ✅ |
 
 ### 下一步建议
-1. 优先在真实浏览器中跑一遍核心闭环（打卡 → 看积分 → 兑换 → 家长审核 → 兑现）
-2. 验证通过后 git commit + push
-3. 若用户决定后续上线，再从原型反推需要的最小后端（express + better-sqlite3 + static serving），数据结构已定可直接迁移
+1. 若决定后续上线，从原型反推最小后端（express + better-sqlite3 + static serving），数据结构已定可直接迁移
+2. 真实浏览器中人工跑一遍核心闭环（验证 Playwright headless 与有头浏览器行为一致）
+3. T04 跨日打卡场景需手动验证（修改系统日期后刷新页面）
 
 

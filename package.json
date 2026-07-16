@@ -1,0 +1,15 @@
+{
+  "name": "growth-points-bank-prototype-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dev-only test runner for the single-file HTML prototype. The prototype itself (index.html) has zero dependencies.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:report": "playwright show-report",
+    "logic": "node scratch/test_logic.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

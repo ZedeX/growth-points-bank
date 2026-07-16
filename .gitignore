@@ -12,3 +12,6 @@ Thumbs.db
 drizzle/
 *.tsbuildinfo
 apps/api/data/
+scratch/playwright-report/
+scratch/playwright-results.json
+test-results/
