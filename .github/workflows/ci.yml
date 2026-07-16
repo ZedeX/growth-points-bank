@@ -65,7 +65,7 @@ jobs:
         run: pnpm db:migrate
 
       - name: Run tests
-        run: pnpm test || true  # MVP: tests may be empty; skip failure
+        run: pnpm test
 
       - name: Build
         run: pnpm build

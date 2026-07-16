@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db, schema } from '../db/client.js';
 import { eq, and, sql } from 'drizzle-orm';
-import { requireChild, requireFamilyId } from '../middleware/auth.js';
+import { requireChild, requireParent, requireFamilyId } from '../middleware/auth.js';
 import { recordPointsTx, withSerializableRetry, getBalance, getChildPointsHistory } from '../services/points.js';
 import { createCheckinSchema } from '@gpb/shared';
 
@@ -92,27 +92,34 @@ export async function checkinRoutes(app: FastifyInstance) {
 
   // Revoke check-in (parent only)
   app.post('/api/checkins/:id/revoke', {
-    preHandler: [requireChild], // wait - should be parent
+    preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    // Actually this should be parent-only, but let me fix the preHandler
-    if (request.auth?.role !== 'parent') {
-      return reply.code(403).send({ error: { code: 1002, message: 'Parent role required' } });
-    }
     const familyId = requireFamilyId(request, reply);
     if (!familyId) return;
     const { id } = request.params as { id: string };
 
     const result = await withSerializableRetry(async () => {
       return db.transaction(async (tx) => {
+        // Fetch existing checkin first to get taskId (need it to compute points to deduct)
+        const [existing] = await tx.select().from(schema.checkins)
+          .where(eq(schema.checkins.id, id)).limit(1);
+        if (!existing) throw { code: 9002, message: 'Check-in not found' };
+        if (existing.revokedByParent) throw { code: 3002, message: 'Already revoked' };
+
+        // Look up the task to compute the effective points that were awarded
+        const [task] = await tx.select().from(schema.tasks)
+          .where(eq(schema.tasks.id, existing.taskId)).limit(1);
+        const effectivePoints = task
+          ? Math.round(task.pointValue * task.difficultyMultiplier / 100)
+          : 0;
+
         const [checkin] = await tx.update(schema.checkins).set({
           revokedByParent: true,
           revokedAt: new Date(),
         }).where(eq(schema.checkins.id, id)).returning();
 
-        if (!checkin) throw { code: 9002, message: 'Check-in not found' };
-
-        // Deduct points (revocation)
-        const pointsResult = await recordPointsTx(tx, checkin.childId, -Math.abs(1), 'revocation', checkin.id);
+        // Deduct the same amount that was originally awarded
+        const pointsResult = await recordPointsTx(tx, checkin.childId, -effectivePoints, 'revocation', checkin.id);
         return { checkin, balanceAfter: pointsResult.balanceAfter };
       });
     });
