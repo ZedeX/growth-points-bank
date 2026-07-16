@@ -8,7 +8,7 @@ import { createDiarySchema } from '@gpb/shared';
 export async function diaryRoutes(app: FastifyInstance) {
   // List diaries
   app.get('/api/diaries', async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const childId = request.auth!.role === 'child' ? request.auth!.sub : (request.query as any)?.child_id;
     if (!childId) {

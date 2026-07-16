@@ -11,7 +11,7 @@ export async function childrenRoutes(app: FastifyInstance) {
   app.get('/api/children', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const children = await getChildrenForFamily(familyId);
     return { children };
@@ -21,7 +21,7 @@ export async function childrenRoutes(app: FastifyInstance) {
   app.post('/api/children', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const parsed = createChildSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -35,7 +35,7 @@ export async function childrenRoutes(app: FastifyInstance) {
   app.get('/api/children/:id', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const { id } = request.params as { id: string };
     const child = await getChildById(id, familyId);
@@ -49,7 +49,7 @@ export async function childrenRoutes(app: FastifyInstance) {
   app.post('/api/children/:id/regenerate-token', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const { id } = request.params as { id: string };
     try {
@@ -64,7 +64,7 @@ export async function childrenRoutes(app: FastifyInstance) {
   app.get('/api/dimensions', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const dims = await db.select().from(schema.growthDimensions)
       .where(eq(schema.growthDimensions.familyId, familyId))
@@ -76,7 +76,7 @@ export async function childrenRoutes(app: FastifyInstance) {
   app.post('/api/dimensions', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const body = request.body as any;
     const [dim] = await db.insert(schema.growthDimensions).values({

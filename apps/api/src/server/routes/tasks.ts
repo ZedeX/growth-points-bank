@@ -9,7 +9,7 @@ const DIFFICULTY_MULT: Record<string, number> = { easy: 100, medium: 150, hard: 
 export async function taskRoutes(app: FastifyInstance) {
   // List tasks (parent sees all, child sees age-appropriate)
   app.get('/api/tasks', async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
 
     const conditions = [eq(schema.tasks.familyId, familyId), eq(schema.tasks.isActive, true)];
@@ -47,7 +47,7 @@ export async function taskRoutes(app: FastifyInstance) {
   app.post('/api/tasks', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const parsed = createTaskSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -82,7 +82,7 @@ export async function taskRoutes(app: FastifyInstance) {
   app.patch('/api/tasks/:id', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const { id } = request.params as { id: string };
     const body = request.body as any;
@@ -102,7 +102,7 @@ export async function taskRoutes(app: FastifyInstance) {
   app.delete('/api/tasks/:id', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const { id } = request.params as { id: string };
 

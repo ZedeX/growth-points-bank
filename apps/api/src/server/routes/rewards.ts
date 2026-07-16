@@ -8,7 +8,7 @@ import { createRewardSchema, createRedemptionSchema, updateRedemptionSchema } fr
 export async function rewardRoutes(app: FastifyInstance) {
   // List rewards
   app.get('/api/rewards', async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const rewards = await db.select().from(schema.rewards)
       .where(and(eq(schema.rewards.familyId, familyId), eq(schema.rewards.isActive, true)))
@@ -20,7 +20,7 @@ export async function rewardRoutes(app: FastifyInstance) {
   app.post('/api/rewards', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const parsed = createRewardSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -42,7 +42,7 @@ export async function rewardRoutes(app: FastifyInstance) {
   app.patch('/api/rewards/:id', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const { id } = request.params as { id: string };
     const body = request.body as any;
@@ -58,7 +58,7 @@ export async function rewardRoutes(app: FastifyInstance) {
   app.delete('/api/rewards/:id', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const { id } = request.params as { id: string };
     await db.update(schema.rewards).set({ isActive: false, updatedAt: new Date() })
@@ -70,7 +70,7 @@ export async function rewardRoutes(app: FastifyInstance) {
   app.post('/api/redemptions', {
     preHandler: [requireChild],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const childId = request.auth!.sub;
     const parsed = createRedemptionSchema.safeParse(request.body);
@@ -141,7 +141,7 @@ export async function rewardRoutes(app: FastifyInstance) {
 
   // List redemptions
   app.get('/api/redemptions', async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const childId = request.auth!.role === 'child' ? request.auth!.sub : (request.query as any)?.child_id;
 
@@ -175,7 +175,7 @@ export async function rewardRoutes(app: FastifyInstance) {
   app.patch('/api/redemptions/:id', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const { id } = request.params as { id: string };
     const parsed = updateRedemptionSchema.safeParse(request.body);

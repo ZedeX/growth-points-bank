@@ -10,7 +10,7 @@ export async function checkinRoutes(app: FastifyInstance) {
   app.post('/api/checkins', {
     preHandler: [requireChild],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const childId = request.auth!.sub;
     const parsed = createCheckinSchema.safeParse(request.body);
@@ -63,7 +63,7 @@ export async function checkinRoutes(app: FastifyInstance) {
 
   // List check-ins for child
   app.get('/api/checkins', async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const childId = request.auth!.role === 'child' ? request.auth!.sub : (request.query as any)?.child_id;
 
@@ -94,7 +94,7 @@ export async function checkinRoutes(app: FastifyInstance) {
   app.post('/api/checkins/:id/revoke', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const { id } = request.params as { id: string };
 
@@ -129,7 +129,7 @@ export async function checkinRoutes(app: FastifyInstance) {
 
   // Get balance
   app.get('/api/points/balance', async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const childId = request.auth!.role === 'child' ? request.auth!.sub : (request.query as any)?.child_id;
     if (!childId) {
@@ -141,7 +141,7 @@ export async function checkinRoutes(app: FastifyInstance) {
 
   // Get points history
   app.get('/api/points/history', async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const childId = request.auth!.role === 'child' ? request.auth!.sub : (request.query as any)?.child_id;
     if (!childId) {

@@ -66,7 +66,7 @@ export async function createChild(familyId: string, input: { name: string; age_g
   return db.transaction(async (tx) => {
     const [child] = await tx.insert(schema.children).values({
       familyId,
-      name: input.name,  // will be encrypted in update below
+      name: input.name,
       ageGroup: input.age_group,
       avatar: input.avatar || null,
       accessToken: hashed,
@@ -74,7 +74,6 @@ export async function createChild(familyId: string, input: { name: string; age_g
       tokenVersion: 1,
     }).returning();
 
-    // Encrypt PII fields now that we have the ID
     await tx.update(schema.children).set({
       name: encryptField('children', child.id, input.name),
       avatar: encryptField('children', child.id, input.avatar || null),
@@ -85,7 +84,7 @@ export async function createChild(familyId: string, input: { name: string; age_g
       familyId: child.familyId,
       name: input.name,
       ageGroup: child.ageGroup,
-      accessToken: plaintext,  // returned once for parent to share
+      accessToken: plaintext,
       tokenExpiresAt: expiresAt.toISOString(),
     };
   });

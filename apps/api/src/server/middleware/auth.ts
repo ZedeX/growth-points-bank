@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 const PARENT_SECRET = process.env.PARENT_JWT_SECRET || 'dev-parent-secret-32-chars-min';
 const CHILD_SECRET = process.env.CHILD_JWT_SECRET || 'dev-child-secret-32-chars-min';
@@ -17,20 +17,10 @@ declare module 'fastify' {
   }
 }
 
-/**
- * Sign a JWT using Node.js native crypto (not jose/Web Crypto API).
- * jose.SignJWT and jose.jwtVerify were both causing issues in CI
- * (Node 24 + vitest singleFork mode) - SignJWT left dangling Web Crypto
- * promises that interfered with subsequent db.transaction() calls.
- */
 function signJWT(payload: Record<string, any>, secret: string, expiresInSec: number): string {
   const header = { alg: 'HS256', typ: 'JWT' };
   const now = Math.floor(Date.now() / 1000);
-  const fullPayload = {
-    ...payload,
-    iat: now,
-    exp: now + expiresInSec,
-  };
+  const fullPayload = { ...payload, iat: now, exp: now + expiresInSec };
 
   const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
   const payloadB64 = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
@@ -54,7 +44,6 @@ function verifyTokenSync(token: string, secret: string): any | null {
 
   const [headerB64, payloadB64, signatureB64] = parts;
   const signingInput = `${headerB64}.${payloadB64}`;
-
   const expectedSig = createHmac('sha256', secret).update(signingInput).digest('base64url');
 
   try {
@@ -68,9 +57,7 @@ function verifyTokenSync(token: string, secret: string): any | null {
 
   try {
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-      return null;
-    }
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
     return payload;
   } catch {
     return null;
@@ -112,25 +99,25 @@ export async function authMiddleware(request: FastifyRequest, _reply: FastifyRep
   }
 }
 
-export function requireAuth(request: FastifyRequest, reply: FastifyReply): void {
+export async function requireAuth(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!request.auth) {
     reply.code(401).send({ error: { code: 1001, message: 'Authentication required' } });
   }
 }
 
-export function requireParent(request: FastifyRequest, reply: FastifyReply): void {
+export async function requireParent(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!request.auth || request.auth.role !== 'parent') {
     reply.code(403).send({ error: { code: 2001, message: 'Parent access required' } });
   }
 }
 
-export function requireChild(request: FastifyRequest, reply: FastifyReply): void {
+export async function requireChild(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!request.auth || request.auth.role !== 'child') {
     reply.code(403).send({ error: { code: 2002, message: 'Child access required' } });
   }
 }
 
-export function requireFamilyId(request: FastifyRequest, reply: FastifyReply): string | null {
+export async function requireFamilyId(request: FastifyRequest, reply: FastifyReply): Promise<string | null> {
   if (!request.auth?.family_id) {
     reply.code(401).send({ error: { code: 1001, message: 'Authentication required' } });
     return null;

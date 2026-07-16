@@ -7,7 +7,7 @@ import { submitChildReviewSchema, submitParentReviewSchema } from '@gpb/shared';
 export async function reviewRoutes(app: FastifyInstance) {
   // Get weekly review
   app.get('/api/reviews', async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const childId = request.auth!.role === 'child' ? request.auth!.sub : (request.query as any)?.child_id;
     const weekStart = (request.query as any)?.week_start_date;
@@ -125,7 +125,7 @@ export async function reviewRoutes(app: FastifyInstance) {
   app.post('/api/reviews/parent', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const familyId = requireFamilyId(request, reply);
+    const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const parsed = submitParentReviewSchema.safeParse(request.body);
     if (!parsed.success) {

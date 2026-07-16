@@ -28,7 +28,7 @@ export type Family = z.infer<typeof familySchema>;
 export const createChildSchema = z.object({
   name: z.string().min(1).max(50),
   age_group: z.enum(['6-8', '9-11', '12-14']),
-  avatar: z.string().url().optional(),
+  avatar: z.string().url().nullish(),
 });
 export type CreateChildInput = z.infer<typeof createChildSchema>;
 
