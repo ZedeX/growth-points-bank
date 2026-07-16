@@ -341,6 +341,53 @@
 - `README.zh-CN.md` — 中文版
 - `LICENSE` — MIT
 
+---
+
+## 2026-07-16 22:30 - SQLite 迁移完成 + CI 验证通过
+
+### 需求来源
+延续上一个 session 的工作。用户在修复 GitHub Actions CI 失败时，提出"数据库可否用sqlite这种比较轻量化的？"，并选择"全面切换SQLite，包括测试和生产"。
+
+### 决策与执行
+1. **架构决策**：全面从 PostgreSQL 迁移到 SQLite（better-sqlite3 + Drizzle ORM）
+   - ADR: `docs/architecture/adr-0010-switch-to-sqlite.md`
+   - 驱动：better-sqlite3（同步 API，WAL 模式，foreign_keys ON）
+   - ORM：Drizzle ORM for SQLite（sqliteTable/text/integer/check/uniqueIndex）
+
+2. **关键文件重写**：
+   - `apps/api/src/server/db/schema.ts` — 全表 SQLite 化
+   - `apps/api/src/server/db/client.ts` — better-sqlite3 + WAL + foreign_keys
+   - `apps/api/src/server/db/migrate.ts` — SQLite DDL 语法
+   - `apps/api/src/server/services/points.ts` — withSerializableRetry 简化
+   - `apps/api/test/integration/helpers.ts` — DELETE FROM + sqlite_sequence 重置
+   - `apps/api/test/globalSetup.ts` — 移除 PostgreSQL pool 注释
+   - `.github/workflows/ci.yml` — DATABASE_URL=data/gpb.db，移除 postgres 容器，`pnpm approve-builds better-sqlite3 argon2 esbuild es5-ext || true`
+   - `.gitignore` — 新增 `apps/api/data/`
+   - `apps/api/package.json` — 移除 `jose` 依赖（auth 已用原生 crypto）
+
+3. **10 个测试 bug 修复**：
+   - CHECK 约束违反（reviews.ts）：INSERT 中 `locked_at` 始终设为 NULL，由 ON CONFLICT DO UPDATE 处理
+   - NOT NULL 约束（weekly_review_access_log.review_id）：INSERT 添加 `id` 列，使用 `randomUUID()`
+   - token_version 验证移至 authMiddleware（每个请求都执行）
+   - 401/403 区分：添加 `authAttempted` 标志
+   - 兑换状态转换验证：添加 `validTransitions` 状态机
+   - 排序稳定性：`desc(createdAt), desc(sql\`rowid\`)` 替代 `desc(createdAt), desc(id)`
+   - JWT 原生 crypto 实现：`createHmac` + `timingSafeEqual`
+
+### 最终结果
+- **Commit**: `1774893` (已推送到 `origin/master`)
+- **CI run**: `29513129205` — `success` (38s)
+- **本地测试**: 88/88 通过（从 PostgreSQL 时代的 105s+ 超时降至 ~2.9s）
+- **Typecheck**: clean
+- **测试覆盖**: §13-17 全部实现并通过
+
+### 重要技术教训
+1. **SQLite CHECK 约束在 ON CONFLICT 之前评估** — INSERT VALUES 中不能包含违反 CHECK 约束的值，即使是 UPSERT 场景
+2. **SQLite TEXT PRIMARY KEY 允许 NULL** — 非 `INTEGER PRIMARY KEY` 的列不自动生成 ID，需要手动提供
+3. **SQLite rowid** — 隐藏的 64 位自增列，可用于稳定排序
+4. **Fastify 4 preHandler 异步要求** — 所有 preHandler 必须是 async，否则请求会无限挂起
+5. **PowerShell heredoc 不支持** — `git commit -m "$(cat <<'EOF'...EOF)"` 在 PowerShell 中失败，改用 `git commit -F .git/COMMIT_MSG.tmp`
+
 ### 编码过程关键修复
 
 #### TypeScript 类型错误修复（共 11 处）
