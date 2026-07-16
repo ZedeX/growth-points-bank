@@ -17,7 +17,7 @@ let childId: string;
 beforeEach(async () => {
   await cleanDatabase();
   app = await createTestApp();
-  const reg = await registerParent({ email: 'points-test@test.com' });
+  const reg = await registerParent({ email: 'points-test@test.com', app });
   parentToken = reg.token;
   const child = await createChild(app, parentToken, { name: '积分孩子', age_group: '6-8' });
   childId = child.childId;

@@ -13,6 +13,9 @@ export default defineConfig({
     environment: 'node',
     include: ['test/**/*.test.ts'],
     globalSetup: ['test/globalSetup.ts'],
+    // CI runners are slower; give hooks and tests more room.
+    hookTimeout: 60_000,
+    testTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary'],

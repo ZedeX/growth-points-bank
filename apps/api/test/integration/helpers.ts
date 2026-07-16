@@ -44,6 +44,9 @@ export async function cleanDatabase(): Promise<void> {
 
 /**
  * Register a parent and return the auth token + family info.
+ * Pass `app` to reuse an existing Fastify instance (avoids creating a
+ * duplicate app that would never be closed). If omitted, a new app is
+ * created and returned.
  */
 export async function registerParent(overrides: Partial<{
   email: string;
@@ -51,13 +54,14 @@ export async function registerParent(overrides: Partial<{
   password: string;
   family_name: string;
   parent_name: string;
+  app: FastifyInstance;
 }> = {}): Promise<{
   token: string;
   familyId: string;
   parentId: string;
   app: FastifyInstance;
 }> {
-  const app = await createTestApp();
+  const app = overrides.app ?? await createTestApp();
   const suffix = Math.random().toString(36).slice(2, 10);
   const response = await app.inject({
     method: 'POST',
@@ -158,6 +162,7 @@ export async function getChildJwt(
 export async function setupFamilyWithChild(overrides: Partial<{
   childName: string;
   ageGroup: string;
+  app: FastifyInstance;
 }> = {}): Promise<{
   app: FastifyInstance;
   parentToken: string;
@@ -165,7 +170,8 @@ export async function setupFamilyWithChild(overrides: Partial<{
   childId: string;
   childToken: string;
 }> {
-  const { app, token, familyId } = await registerParent();
+  const app = overrides.app ?? await createTestApp();
+  const { token, familyId } = await registerParent({ app });
   const { childId, accessToken } = await createChild(app, token, {
     name: overrides.childName || '小明',
     age_group: overrides.ageGroup || '6-8',

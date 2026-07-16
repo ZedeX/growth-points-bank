@@ -8,7 +8,7 @@ let token: string;
 beforeEach(async () => {
   await cleanDatabase();
   app = await createTestApp();
-  const reg = await registerParent({ email: 'tasks-test@test.com' });
+  const reg = await registerParent({ email: 'tasks-test@test.com', app });
   token = reg.token;
 });
 

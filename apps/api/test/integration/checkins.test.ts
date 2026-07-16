@@ -18,7 +18,7 @@ let taskId: string;
 beforeEach(async () => {
   await cleanDatabase();
   app = await createTestApp();
-  const reg = await registerParent({ email: 'checkins-test@test.com' });
+  const reg = await registerParent({ email: 'checkins-test@test.com', app });
   parentToken = reg.token;
   const child = await createChild(app, parentToken, { name: '打卡孩子', age_group: '6-8' });
   childId = child.childId;

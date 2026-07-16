@@ -16,7 +16,7 @@ afterEach(async () => {
 describe('POST /api/children', () => {
   // RED 1: 成功创建孩子
   test('creates a child profile under family', async () => {
-    const { token, familyId } = await registerParent();
+    const { token, familyId } = await registerParent({ app });
 
     const response = await app.inject({
       method: 'POST',
@@ -51,7 +51,7 @@ describe('POST /api/children', () => {
 
   // RED 3: 重新生成孩子访问令牌
   test('regenerates access token for child', async () => {
-    const { token } = await registerParent({ email: 'token-test@test.com' });
+    const { token } = await registerParent({ email: 'token-test@test.com', app });
     // Create a child
     const createResp = await app.inject({
       method: 'POST',
@@ -76,7 +76,7 @@ describe('POST /api/children', () => {
 
 describe('GET /api/children', () => {
   test('lists children for family', async () => {
-    const { token } = await registerParent({ email: 'list-children@test.com' });
+    const { token } = await registerParent({ email: 'list-children@test.com', app });
 
     // Create two children
     await app.inject({

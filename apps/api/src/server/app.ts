@@ -16,7 +16,9 @@ import { diaryRoutes } from './routes/diaries.js';
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
-      level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+      level: process.env.NODE_ENV === 'production' ? 'info'
+        : process.env.NODE_ENV === 'test' ? 'silent'
+        : 'debug',
     },
   });
 
