@@ -13,19 +13,29 @@ import { rewardRoutes } from './routes/rewards.js';
 import { reviewRoutes } from './routes/reviews.js';
 import { diaryRoutes } from './routes/diaries.js';
 
-export async function buildApp(): Promise<FastifyInstance> {
+export interface BuildAppOptions {
+  /** Skip heavy security plugins (helmet, rateLimit) for faster test startup. */
+  skipSecurityPlugins?: boolean;
+}
+
+export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
+  const isTest = process.env.NODE_ENV === 'test';
+  const skipSecurity = options.skipSecurityPlugins ?? isTest;
+
   const app = Fastify({
     logger: {
       level: process.env.NODE_ENV === 'production' ? 'info'
-        : process.env.NODE_ENV === 'test' ? 'silent'
+        : isTest ? 'silent'
         : 'debug',
     },
   });
 
   // Plugins
-  await app.register(helmet, {
-    contentSecurityPolicy: false,  // disable for dev; enable in production
-  });
+  if (!skipSecurity) {
+    await app.register(helmet, {
+      contentSecurityPolicy: false,  // disable for dev; enable in production
+    });
+  }
   await app.register(cors, {
     origin: process.env.NODE_ENV === 'production' ? false : true,
     credentials: true,
@@ -33,10 +43,12 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(cookie, {
     secret: process.env.CHILD_JWT_SECRET || 'dev-cookie-secret',
   });
-  await app.register(rateLimit, {
-    max: 100,
-    timeWindow: '1 minute',
-  });
+  if (!skipSecurity) {
+    await app.register(rateLimit, {
+      max: 100,
+      timeWindow: '1 minute',
+    });
+  }
 
   // Auth middleware - runs on every request
   app.addHook('preHandler', authMiddleware);
