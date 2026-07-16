@@ -1,19 +1,22 @@
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { registerParent, createTestApp, cleanDatabase, createTask } from './helpers';
 
 let app: FastifyInstance;
 let token: string;
 
-beforeEach(async () => {
-  await cleanDatabase();
+beforeAll(async () => {
   app = await createTestApp();
-  const reg = await registerParent({ email: 'tasks-test@test.com', app });
-  token = reg.token;
 });
 
-afterEach(async () => {
+afterAll(async () => {
   await app.close();
+});
+
+beforeEach(async () => {
+  await cleanDatabase();
+  const reg = await registerParent({ email: 'tasks-test@test.com', app });
+  token = reg.token;
 });
 
 describe('POST /api/tasks', () => {

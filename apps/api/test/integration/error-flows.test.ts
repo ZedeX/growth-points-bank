@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import {
   registerParent,
@@ -15,18 +15,21 @@ let parentToken: string;
 let childToken: string;
 let childId: string;
 
+beforeAll(async () => {
+  app = await createTestApp();
+});
+
+afterAll(async () => {
+  await app.close();
+});
+
 beforeEach(async () => {
   await cleanDatabase();
-  app = await createTestApp();
   const reg = await registerParent({ email: 'errors-test@test.com', app });
   parentToken = reg.token;
   const child = await createChild(app, parentToken, { name: '边界孩子', age_group: '6-8' });
   childId = child.childId;
   childToken = await getChildJwt(app, child.accessToken);
-});
-
-afterEach(async () => {
-  await app.close();
 });
 
 describe('Input validation edge cases', () => {

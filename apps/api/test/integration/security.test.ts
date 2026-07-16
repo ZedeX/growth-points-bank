@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { eq, sql } from 'drizzle-orm';
 import { db, schema } from '../../src/server/db/client.js';
@@ -14,13 +14,16 @@ import {
 
 let app: FastifyInstance;
 
-beforeEach(async () => {
-  await cleanDatabase();
+beforeAll(async () => {
   app = await createTestApp();
 });
 
-afterEach(async () => {
+afterAll(async () => {
   await app.close();
+});
+
+beforeEach(async () => {
+  await cleanDatabase();
 });
 
 describe('Multi-tenant isolation', () => {
