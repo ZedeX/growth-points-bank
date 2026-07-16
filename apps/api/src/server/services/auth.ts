@@ -63,7 +63,9 @@ export async function createChild(familyId: string, input: { name: string; age_g
   const { plaintext, hashed } = generateAndHashToken();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
+  if (process.env.NODE_ENV === 'test') console.log('[createChild] entering db.transaction');
   return db.transaction(async (tx) => {
+    if (process.env.NODE_ENV === 'test') console.log('[createChild] inside tx, inserting child');
     const [child] = await tx.insert(schema.children).values({
       familyId,
       name: input.name,  // will be encrypted in update below
@@ -73,12 +75,14 @@ export async function createChild(familyId: string, input: { name: string; age_g
       tokenExpiresAt: expiresAt,
       tokenVersion: 1,
     }).returning();
+    if (process.env.NODE_ENV === 'test') console.log('[createChild] child inserted, encrypting fields');
 
     // Encrypt PII fields now that we have the ID
     await tx.update(schema.children).set({
       name: encryptField('children', child.id, input.name),
       avatar: encryptField('children', child.id, input.avatar || null),
     }).where(eq(schema.children.id, child.id));
+    if (process.env.NODE_ENV === 'test') console.log('[createChild] fields encrypted, returning');
 
     return {
       id: child.id,
