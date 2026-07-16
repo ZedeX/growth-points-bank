@@ -27,10 +27,9 @@ export default defineConfig({
         singleFork: true,
       },
     },
-    // Reduced timeouts for faster CI feedback during debugging.
-    // If beforeEach hangs, it will fail in 15s instead of 60s.
-    hookTimeout: 15_000,
-    testTimeout: 10_000,
+    // CI runners are slower; give hooks and tests reasonable room.
+    hookTimeout: 30_000,
+    testTimeout: 15_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary'],

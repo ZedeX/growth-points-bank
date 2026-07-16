@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import * as jose from 'jose';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 const PARENT_SECRET = new TextEncoder().encode(process.env.PARENT_JWT_SECRET || 'dev-parent-secret-32-chars-min');
 const CHILD_SECRET = new TextEncoder().encode(process.env.CHILD_JWT_SECRET || 'dev-child-secret-32-chars-min');
@@ -35,26 +36,65 @@ export async function signChildToken(payload: { sub: string; family_id: string; 
   return jwt;
 }
 
-export async function verifyToken(token: string): Promise<AuthPayload | null> {
+/**
+ * Verify a JWT token using Node.js native crypto (not jose/Web Crypto API).
+ * jose.jwtVerify() was hanging in CI (Node 24 + vitest singleFork mode),
+ * causing every authenticated request to time out. This implementation
+ * uses createHmac directly and is fully synchronous.
+ */
+function verifyTokenSync(token: string, secret: Uint8Array): any | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+
+  const [headerB64, payloadB64, signatureB64] = parts;
+  const signingInput = `${headerB64}.${payloadB64}`;
+
+  // Compute expected signature
+  const expectedSig = createHmac('sha256', Buffer.from(secret))
+    .update(signingInput)
+    .digest('base64url');
+
+  // Timing-safe comparison
+  try {
+    const a = Buffer.from(signatureB64);
+    const b = Buffer.from(expectedSig);
+    if (a.length !== b.length) return null;
+    if (!timingSafeEqual(a, b)) return null;
+  } catch {
+    return null;
+  }
+
+  // Decode payload
+  try {
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    // Check expiration
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+export function verifyToken(token: string): AuthPayload | null {
   // Try parent secret first
-  try {
-    const { payload } = await jose.jwtVerify(token, PARENT_SECRET);
-    if (payload.role === 'parent') {
-      return { role: 'parent', sub: payload.sub as string, family_id: payload.family_id as string };
-    }
-  } catch { /* try child next */ }
+  const parentPayload = verifyTokenSync(token, PARENT_SECRET);
+  if (parentPayload && parentPayload.role === 'parent') {
+    return { role: 'parent', sub: parentPayload.sub, family_id: parentPayload.family_id };
+  }
+
   // Try child secret
-  try {
-    const { payload } = await jose.jwtVerify(token, CHILD_SECRET);
-    if (payload.role === 'child') {
-      return {
-        role: 'child',
-        sub: payload.sub as string,
-        family_id: payload.family_id as string,
-        token_version: payload.token_version as number,
-      };
-    }
-  } catch { /* invalid */ }
+  const childPayload = verifyTokenSync(token, CHILD_SECRET);
+  if (childPayload && childPayload.role === 'child') {
+    return {
+      role: 'child',
+      sub: childPayload.sub,
+      family_id: childPayload.family_id,
+      token_version: childPayload.token_version,
+    };
+  }
+
   return null;
 }
 
@@ -70,7 +110,7 @@ export async function authMiddleware(request: FastifyRequest, _reply: FastifyRep
   }
 
   if (token) {
-    request.auth = (await verifyToken(token)) ?? undefined;
+    request.auth = verifyToken(token) ?? undefined;
   }
 }
 
@@ -82,15 +122,20 @@ export function requireAuth(request: FastifyRequest, reply: FastifyReply): void 
 
 export function requireParent(request: FastifyRequest, reply: FastifyReply): void {
   if (!request.auth || request.auth.role !== 'parent') {
-    reply.code(403).send({ error: { code: 1002, message: 'Parent role required' } });
+    reply.code(403).send({ error: { code: 2001, message: 'Parent access required' } });
   }
 }
 
 export function requireChild(request: FastifyRequest, reply: FastifyReply): void {
   if (!request.auth || request.auth.role !== 'child') {
-    reply.code(403).send({ error: { code: 1002, message: 'Child role required' } });
+    reply.code(403).send({ error: { code: 2002, message: 'Child access required' } });
   }
 }
 
-// Re-export multi-tenant helpers for backward compatibility with route imports
-export { getFamilyId, requireFamilyId, verifyChildInFamily } from './tenant.js';
+export function requireFamilyId(request: FastifyRequest, reply: FastifyReply): string | null {
+  if (!request.auth?.family_id) {
+    reply.code(401).send({ error: { code: 1001, message: 'Authentication required' } });
+    return null;
+  }
+  return request.auth.family_id;
+}
