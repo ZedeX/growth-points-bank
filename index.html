@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>暑假成长积分银行</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --d1: #2196F3; --d2: #FF9800; --d3: #9C27B0; --d4: #4CAF50; --d5: #F44336;
+  --bg: #f5f5f5; --card: #fff; --text: #333; --muted: #999; --border: #eee;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg); color: var(--text); max-width: 480px; margin: 0 auto;
+  min-height: 100vh; display: flex; flex-direction: column;
+}
+header {
+  background: linear-gradient(135deg, #667eea, #764ba2); color: #fff;
+  padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+header h1 { font-size: 16px; font-weight: 600; }
+#roleSwitch {
+  background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.3);
+  padding: 4px 8px; border-radius: 6px; font-size: 13px; cursor: pointer;
+}
+#roleSwitch option { color: #333; }
+main { flex: 1; padding: 12px; padding-bottom: 70px; overflow-y: auto; }
+nav {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 480px; background: #fff; border-top: 1px solid var(--border);
+  display: flex; z-index: 100; box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
+}
+nav button {
+  flex: 1; padding: 10px 4px; border: none; background: none; cursor: pointer;
+  font-size: 11px; color: var(--muted); display: flex; flex-direction: column;
+  align-items: center; gap: 2px; transition: color 0.2s;
+}
+nav button.active { color: #667eea; font-weight: 600; }
+nav button .icon { font-size: 20px; }
+.card {
+  background: var(--card); border-radius: 12px; padding: 14px; margin-bottom: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.dim-card { border-left: 4px solid; transition: transform 0.2s; }
+.dim-card.lit { background: linear-gradient(135deg, #fff9e6, #fff); }
+.section-title { font-size: 14px; font-weight: 600; margin: 16px 0 8px; color: #555; }
+.balance-box {
+  background: linear-gradient(135deg, #667eea, #764ba2); color: #fff;
+  border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 12px;
+}
+.balance-box .num { font-size: 36px; font-weight: 700; }
+.balance-box .label { font-size: 13px; opacity: 0.9; }
+.task-item, .reward-item, .redemption-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px; border-bottom: 1px solid var(--border);
+}
+.task-item:last-child, .reward-item:last-child, .redemption-item:last-child { border-bottom: none; }
+.task-check {
+  width: 24px; height: 24px; border: 2px solid #ddd; border-radius: 50%;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 14px; transition: all 0.2s; flex-shrink: 0;
+}
+.task-check.done { background: #4CAF50; border-color: #4CAF50; color: #fff; }
+.task-check.disabled { opacity: 0.4; cursor: not-allowed; }
+.points-badge {
+  background: #FFF3E0; color: #FF9800; padding: 2px 8px; border-radius: 10px;
+  font-size: 12px; font-weight: 600;
+}
+.btn {
+  padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px;
+  cursor: pointer; transition: opacity 0.2s;
+}
+.btn-primary { background: #667eea; color: #fff; }
+.btn-success { background: #4CAF50; color: #fff; }
+.btn-warning { background: #FF9800; color: #fff; }
+.btn-danger { background: #f44336; color: #fff; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.filter-bar { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; margin-bottom: 8px; }
+.filter-bar button {
+  padding: 4px 12px; border: 1px solid #ddd; background: #fff; border-radius: 16px;
+  font-size: 12px; white-space: nowrap; cursor: pointer; color: #666;
+}
+.filter-bar button.active { background: #667eea; color: #fff; border-color: #667eea; }
+.form-group { margin-bottom: 12px; }
+.form-group label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px;
+  font-size: 14px; font-family: inherit;
+}
+.form-group textarea { resize: vertical; min-height: 60px; }
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5); z-index: 200; display: flex;
+  align-items: center; justify-content: center; padding: 20px;
+}
+.modal {
+  background: #fff; border-radius: 12px; padding: 20px; width: 100%; max-width: 400px;
+  max-height: 80vh; overflow-y: auto;
+}
+.modal h3 { margin-bottom: 16px; font-size: 16px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.empty-state { text-align: center; padding: 40px 20px; color: var(--muted); }
+.empty-state .icon { font-size: 40px; margin-bottom: 8px; }
+.toast {
+  position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.8); color: #fff; padding: 8px 16px; border-radius: 8px;
+  font-size: 13px; z-index: 300; animation: fadeIn 0.2s;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.tx-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.tx-positive { color: #4CAF50; }
+.tx-negative { color: #f44336; }
+.status-badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.status-pending { background: #FFF3E0; color: #FF9800; }
+.status-approved { background: #E3F2FD; color: #2196F3; }
+.status-fulfilled { background: #E8F5E9; color: #4CAF50; }
+.radar-container { display: flex; justify-content: center; padding: 12px 0; }
+.progress-bar { height: 6px; background: #eee; border-radius: 3px; overflow: hidden; margin-top: 6px; }
+.progress-bar .fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.dim-icon { font-size: 24px; }
+.dim-name { font-weight: 600; font-size: 14px; }
+.dim-progress { font-size: 12px; color: var(--muted); }
+.top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.reset-btn { font-size: 11px; color: var(--muted); cursor: pointer; background: none; border: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌟 暑假成长积分银行</h1>
+  <select id="roleSwitch" onchange="switchRole(this.value)">
+    <option value="child">🧒 孩子</option>
+    <option value="parent">👨‍👩‍👧 家长</option>
+  </select>
+</header>
+
+<main id="viewContainer"></main>
+
+<nav id="tabBar"></nav>
+
+<script>
+// ============================================================
+// State Management
+// ============================================================
+const STORAGE_KEY = 'gpb_data';
+
+function seedState() {
+  return {
+    version: 1,
+    currentRole: 'child',
+    currentTab: { parent: 'map', child: 'map' },
+    dimensions: [
+      { id: 'd1', name: '学习力', icon: '📚', color: '#2196F3', sortOrder: 1 },
+      { id: 'd2', name: '运动力', icon: '⚽', color: '#FF9800', sortOrder: 2 },
+      { id: 'd3', name: '自控力', icon: '🎯', color: '#9C27B0', sortOrder: 3 },
+      { id: 'd4', name: '探索力', icon: '🔍', color: '#4CAF50', sortOrder: 4 },
+      { id: 'd5', name: '实践力', icon: '🤲', color: '#F44336', sortOrder: 5 },
+    ],
+    tasks: [
+      { id: 't1', dimensionId: 'd1', title: '阅读30分钟', pointValue: 10, isActive: true },
+      { id: 't2', dimensionId: 'd1', title: '练字一页', pointValue: 10, isActive: true },
+      { id: 't3', dimensionId: 'd1', title: '写日记', pointValue: 20, isActive: true },
+      { id: 't4', dimensionId: 'd2', title: '户外活动1小时', pointValue: 20, isActive: true },
+      { id: 't5', dimensionId: 'd2', title: '跳绳100下', pointValue: 10, isActive: true },
+      { id: 't6', dimensionId: 'd2', title: '跑步15分钟', pointValue: 20, isActive: true },
+      { id: 't7', dimensionId: 'd3', title: '按时起床', pointValue: 10, isActive: true },
+      { id: 't8', dimensionId: 'd3', title: '屏幕时间<1小时', pointValue: 20, isActive: true },
+      { id: 't9', dimensionId: 'd3', title: '自主安排时间表', pointValue: 30, isActive: true },
+      { id: 't10', dimensionId: 'd4', title: '尝试一件新事物', pointValue: 30, isActive: true },
+      { id: 't11', dimensionId: 'd4', title: '情绪日记', pointValue: 20, isActive: true },
+      { id: 't12', dimensionId: 'd4', title: '主动与人沟通', pointValue: 10, isActive: true },
+      { id: 't13', dimensionId: 'd5', title: '洗碗', pointValue: 10, isActive: true },
+      { id: 't14', dimensionId: 'd5', title: '做一道菜', pointValue: 30, isActive: true },
+      { id: 't15', dimensionId: 'd5', title: '整理房间', pointValue: 20, isActive: true },
+    ],
+    rewards: [
+      { id: 'r1', tier: 'small', pointCost: 10, title: '选一次家庭电影', description: '全家一起看一部你选的电影', isActive: true },
+      { id: 'r2', tier: 'small', pointCost: 10, title: '点播睡前故事', description: '爸妈为你讲一个故事', isActive: true },
+      { id: 'r3', tier: 'medium', pointCost: 30, title: '买一本喜欢的书', description: '去书店选一本书', isActive: true },
+      { id: 'r4', tier: 'medium', pointCost: 30, title: '一次朋友聚会', description: '邀请好朋友来家里玩', isActive: true },
+      { id: 'r5', tier: 'large', pointCost: 60, title: '一次短途旅行', description: '全家去一个你想去的地方', isActive: true },
+      { id: 'r6', tier: 'large', pointCost: 60, title: '实现一个小愿望', description: '说一个你期待的小愿望', isActive: true },
+    ],
+    children: [{ id: 'c1', name: '小明', avatar: '🧒' }],
+    checkins: [],
+    pointTransactions: [],
+    redemptions: [],
+  };
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      const seed = seedState();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
+      return seed;
+    }
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('loadState error:', e);
+    return seedState();
+  }
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function resetData() {
+  state = seedState();
+  saveState();
+  renderApp();
+  showToast('数据已重置');
+}
+
+let state = loadState();
+
+// ============================================================
+// Utils
+// ============================================================
+function today() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function getData() { return state; }
+
+function getBalance(childId) {
+  return state.pointTransactions
+    .filter(t => t.childId === childId)
+    .reduce((sum, t) => sum + t.amount, 0);
+}
+
+function getActiveTasksByDimension(dimId) {
+  return state.tasks.filter(t => t.dimensionId === dimId && t.isActive);
+}
+
+function getTodayCheckinsByDimension(dimId, childId) {
+  const t = today();
+  const taskIds = getActiveTasksByDimension(dimId).map(t => t.id);
+  return state.checkins.filter(c => c.childId === childId && c.date === t && taskIds.includes(c.taskId));
+}
+
+function getDimensionProgress(dimId, date, childId) {
+  const tasks = getActiveTasksByDimension(dimId);
+  const total = tasks.length;
+  if (total === 0) return { completed: 0, total: 0, percent: 0, lit: false };
+  const taskIds = tasks.map(t => t.id);
+  const completed = state.checkins.filter(
+    c => c.childId === childId && c.date === date && taskIds.includes(c.taskId)
+  ).length;
+  return { completed, total, percent: Math.round(completed / total * 100), lit: completed === total };
+}
+
+function showToast(msg) {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2000);
+}
+
+// ============================================================
+// Business Logic
+// ============================================================
+function checkin(childId, taskId) {
+  const t = today();
+  const existing = state.checkins.find(c => c.childId === childId && c.taskId === taskId && c.date === t);
+  if (existing) {
+    showToast('今日已打卡');
+    return false;
+  }
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task || !task.isActive) return false;
+
+  const checkinId = genId();
+  state.checkins.push({
+    id: checkinId, childId, taskId, date: t, createdAt: new Date().toISOString(),
+  });
+  state.pointTransactions.push({
+    id: genId(), childId, amount: task.pointValue, sourceType: 'task',
+    sourceId: checkinId, createdAt: new Date().toISOString(),
+  });
+  saveState();
+  return true;
+}
+
+function createRedemption(childId, rewardId, note) {
+  const reward = state.rewards.find(r => r.id === rewardId);
+  if (!reward || !reward.isActive) return false;
+  const balance = getBalance(childId);
+  if (balance < reward.pointCost) {
+    showToast('积分不足');
+    return false;
+  }
+  const redemptionId = genId();
+  state.redemptions.push({
+    id: redemptionId, childId, rewardId, pointCost: reward.pointCost,
+    childNote: note || '', status: 'pending', parentNote: '',
+    createdAt: new Date().toISOString(), reviewedAt: '', fulfilledAt: '',
+  });
+  state.pointTransactions.push({
+    id: genId(), childId, amount: -reward.pointCost, sourceType: 'redemption',
+    sourceId: redemptionId, createdAt: new Date().toISOString(),
+  });
+  saveState();
+  return true;
+}
+
+function approveRedemption(id) {
+  const r = state.redemptions.find(r => r.id === id);
+  if (!r || r.status !== 'pending') return false;
+  r.status = 'approved';
+  r.reviewedAt = new Date().toISOString();
+  saveState();
+  return true;
+}
+
+function fulfillRedemption(id) {
+  const r = state.redemptions.find(r => r.id === id);
+  if (!r || r.status !== 'approved') return false;
+  r.status = 'fulfilled';
+  r.fulfilledAt = new Date().toISOString();
+  saveState();
+  return true;
+}
+
+function addTask(data) {
+  const task = {
+    id: genId(), dimensionId: data.dimensionId, title: data.title,
+    pointValue: parseInt(data.pointValue), isActive: true,
+  };
+  state.tasks.push(task);
+  saveState();
+}
+
+function deleteTask(id) {
+  const idx = state.tasks.findIndex(t => t.id === id);
+  if (idx >= 0) {
+    state.tasks.splice(idx, 1);
+    saveState();
+  }
+}
+
+function addReward(data) {
+  const reward = {
+    id: genId(), tier: data.tier, pointCost: parseInt(data.pointCost),
+    title: data.title, description: data.description || '', isActive: true,
+  };
+  state.rewards.push(reward);
+  saveState();
+}
+
+function deleteReward(id) {
+  const idx = state.rewards.findIndex(r => r.id === id);
+  if (idx >= 0) {
+    state.rewards.splice(idx, 1);
+    saveState();
+  }
+}
+
+// ============================================================
+// Radar Chart (Canvas)
+// ============================================================
+function drawRadar(canvas, data) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2;
+  const radius = Math.min(W, H) / 2 - 40;
+  const n = data.length;
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid
+  for (let level = 1; level <= 5; level++) {
+    const r = radius * level / 5;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const angle = -Math.PI / 2 + (Math.PI * 2 * i / n);
+      const x = cx + r * Math.cos(angle);
+      const y = cy + r * Math.sin(angle);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = level === 5 ? '#ccc' : '#eee';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Axes
+  for (let i = 0; i < n; i++) {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * i / n);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + radius * Math.cos(angle), cy + radius * Math.sin(angle));
+    ctx.strokeStyle = '#eee';
+    ctx.stroke();
+  }
+
+  // Data polygon
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * i / n);
+    const val = Math.max(0, Math.min(100, data[i].value)) / 100;
+    const x = cx + radius * val * Math.cos(angle);
+    const y = cy + radius * val * Math.sin(angle);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255, 193, 7, 0.3)';
+  ctx.fill();
+  ctx.strokeStyle = '#FF9800';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Data points
+  for (let i = 0; i < n; i++) {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * i / n);
+    const val = Math.max(0, Math.min(100, data[i].value)) / 100;
+    const x = cx + radius * val * Math.cos(angle);
+    const y = cy + radius * val * Math.sin(angle);
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#FF9800';
+    ctx.fill();
+  }
+
+  // Labels
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < n; i++) {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * i / n);
+    const lx = cx + (radius + 20) * Math.cos(angle);
+    const ly = cy + (radius + 20) * Math.sin(angle);
+    ctx.fillStyle = '#666';
+    ctx.fillText(data[i].label, lx, ly - 6);
+    ctx.fillStyle = '#FF9800';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(data[i].value + '%', lx, ly + 8);
+    ctx.font = '12px sans-serif';
+  }
+}
+
+function renderRadar(childId) {
+  const data = state.dimensions.map(d => {
+    const p = getDimensionProgress(d.id, today(), childId);
+    return { label: d.name, value: p.percent };
+  });
+  const container = document.createElement('div');
+  container.className = 'radar-container';
+  const canvas = document.createElement('canvas');
+  canvas.width = 280;
+  canvas.height = 280;
+  container.appendChild(canvas);
+  drawRadar(canvas, data);
+  return container;
+}
+
+// ============================================================
+// View Renderers
+// ============================================================
+function renderApp() {
+  const role = state.currentRole;
+  document.getElementById('roleSwitch').value = role;
+  renderTabs();
+  const tab = state.currentTab[role];
+  const container = document.getElementById('viewContainer');
+  if (role === 'parent') {
+    container.innerHTML = ({
+      map: renderParentMap, tasks: renderParentTasks,
+      rewards: renderParentRewards, redemptions: renderParentRedemptions,
+    })[tab]?.() || renderParentMap();
+  } else {
+    container.innerHTML = ({
+      map: renderChildMap, checkin: renderChildCheckin,
+      points: renderChildPoints, rewards: renderChildRewards,
+    })[tab]?.() || renderChildMap();
+  }
+  // Draw radar if map view
+  if (tab === 'map') {
+    const radarHost = document.getElementById('radarHost');
+    if (radarHost) {
+      const childId = state.children[0]?.id || 'c1';
+      radarHost.appendChild(renderRadar(childId));
+    }
+  }
+}
+
+function renderTabs() {
+  const role = state.currentRole;
+  const tabs = role === 'parent'
+    ? [{ id: 'map', icon: '🗺️', label: '成长地图' }, { id: 'tasks', icon: '📋', label: '任务管理' },
+       { id: 'rewards', icon: '🎁', label: '奖励管理' }, { id: 'redemptions', icon: '✅', label: '兑换审核' }]
+    : [{ id: 'map', icon: '🗺️', label: '成长地图' }, { id: 'checkin', icon: '📝', label: '今日打卡' },
+       { id: 'points', icon: '💰', label: '积分记录' }, { id: 'rewards', icon: '🎁', label: '奖励兑换' }];
+  const activeTab = state.currentTab[role];
+  document.getElementById('tabBar').innerHTML = tabs.map(t => `
+    <button class="${t.id === activeTab ? 'active' : ''}" onclick="switchTab('${t.id}')">
+      <span class="icon">${t.icon}</span><span>${t.label}</span>
+    </button>`).join('');
+}
+
+function switchRole(role) {
+  state.currentRole = role;
+  saveState();
+  renderApp();
+}
+
+function switchTab(tabId) {
+  state.currentTab[state.currentRole] = tabId;
+  saveState();
+  renderApp();
+}
+
+// --- Parent Views ---
+
+function renderParentMap() {
+  const child = state.children[0] || { id: 'c1', name: '小明', avatar: '🧒' };
+  const balance = getBalance(child.id);
+  const t = today();
+  let totalTasks = 0, completedTasks = 0;
+  const dimCards = state.dimensions.map(d => {
+    const p = getDimensionProgress(d.id, t, child.id);
+    totalTasks += p.total;
+    completedTasks += p.completed;
+    return `
+      <div class="card dim-card ${p.lit ? 'lit' : ''}" style="border-left-color:${d.color}">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="dim-icon">${d.icon}</span>
+            <div>
+              <div class="dim-name" style="color:${d.color}">${d.name}</div>
+              <div class="dim-progress">${p.completed}/${p.total} ${p.lit ? '✨ 已点亮' : ''}</div>
+            </div>
+          </div>
+          <div style="font-size:18px;font-weight:700;color:${d.color}">${p.percent}%</div>
+        </div>
+        <div class="progress-bar"><div class="fill" style="width:${p.percent}%;background:${d.color}"></div></div>
+      </div>`;
+  }).join('');
+  const todayPercent = totalTasks > 0 ? Math.round(completedTasks / totalTasks * 100) : 0;
+  return `
+    <div class="top-bar">
+      <div style="font-size:14px;color:#666;">${child.avatar} ${child.name} 的成长地图</div>
+      <button class="reset-btn" onclick="if(confirm('确认重置所有数据？'))resetData()">🔄 重置</button>
+    </div>
+    <div class="balance-box">
+      <div class="label">今日完成率</div>
+      <div class="num">${todayPercent}%</div>
+      <div style="font-size:12px;opacity:0.8;margin-top:4px;">${completedTasks}/${totalTasks} 个任务 · 积分余额 ${balance}</div>
+    </div>
+    <div id="radarHost"></div>
+    <div class="section-title">五大成长维度</div>
+    ${dimCards}
+  `;
+}
+
+function renderParentTasks() {
+  const tasksByDim = state.dimensions.map(d => {
+    const tasks = state.tasks.filter(t => t.dimensionId === d.id);
+    return { dim: d, tasks };
+  });
+  return `
+    <div class="top-bar">
+      <div class="section-title" style="margin:0">📋 任务管理</div>
+      <button class="btn btn-primary btn-sm" onclick="showTaskForm()">+ 新建任务</button>
+    </div>
+    ${tasksByDim.map(({ dim, tasks }) => `
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+          <span>${dim.icon}</span>
+          <span style="font-weight:600;color:${dim.color}">${dim.name}</span>
+          <span style="font-size:12px;color:#999">(${tasks.length})</span>
+        </div>
+        ${tasks.length === 0 ? '<div style="color:#999;font-size:13px;padding:8px 0;">暂无任务</div>' :
+          tasks.map(t => `
+          <div class="task-item">
+            <div>
+              <div style="font-size:14px;">${t.title}</div>
+              <span class="points-badge">${t.pointValue}分</span>
+            </div>
+            <button class="btn btn-danger btn-sm" onclick="if(confirm('删除任务？')){deleteTask('${t.id}');renderApp();}">删除</button>
+          </div>`).join('')}
+      </div>
+    `).join('')}
+  `;
+}
+
+function showTaskForm() {
+  const dimOptions = state.dimensions.map(d => `<option value="${d.id}">${d.icon} ${d.name}</option>`).join('');
+  const html = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h3>新建任务</h3>
+        <div class="form-group">
+          <label>任务名称</label>
+          <input id="taskTitle" placeholder="如：背10个单词" autofocus>
+        </div>
+        <div class="form-group">
+          <label>所属维度</label>
+          <select id="taskDim">${dimOptions}</select>
+        </div>
+        <div class="form-group">
+          <label>积分值</label>
+          <input id="taskPoints" type="number" value="10" min="1">
+        </div>
+        <div class="modal-actions">
+          <button class="btn" style="background:#eee" onclick="closeModal()">取消</button>
+          <button class="btn btn-primary" onclick="submitTaskForm()">保存</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function submitTaskForm() {
+  const title = document.getElementById('taskTitle').value.trim();
+  const dimensionId = document.getElementById('taskDim').value;
+  const pointValue = document.getElementById('taskPoints').value;
+  if (!title) { showToast('请输入任务名称'); return; }
+  if (!pointValue || pointValue < 1) { showToast('请输入有效积分值'); return; }
+  addTask({ title, dimensionId, pointValue });
+  closeModal();
+  renderApp();
+  showToast('任务已创建');
+}
+
+function closeModal() {
+  const m = document.querySelector('.modal-overlay');
+  if (m) m.remove();
+}
+
+function renderParentRewards() {
+  const tiers = [
+    { id: 'small', name: '小奖励', color: '#4CAF50', defaultCost: 10 },
+    { id: 'medium', name: '中奖励', color: '#FF9800', defaultCost: 30 },
+    { id: 'large', name: '大奖励', color: '#f44336', defaultCost: 60 },
+  ];
+  return `
+    <div class="top-bar">
+      <div class="section-title" style="margin:0">🎁 奖励管理</div>
+      <button class="btn btn-primary btn-sm" onclick="showRewardForm()">+ 新建奖励</button>
+    </div>
+    ${tiers.map(tier => {
+      const rewards = state.rewards.filter(r => r.tier === tier.id);
+      return `
+        <div class="card">
+          <div style="font-weight:600;color:${tier.color};margin-bottom:8px;">${tier.name}</div>
+          ${rewards.length === 0 ? '<div style="color:#999;font-size:13px;">暂无奖励</div>' :
+            rewards.map(r => `
+            <div class="reward-item">
+              <div style="flex:1;">
+                <div style="font-size:14px;font-weight:500;">${r.title}</div>
+                <div style="font-size:12px;color:#999;">${r.description}</div>
+                <span class="points-badge">${r.pointCost}分</span>
+              </div>
+              <button class="btn btn-danger btn-sm" onclick="if(confirm('删除奖励？')){deleteReward('${r.id}');renderApp();}">删除</button>
+            </div>`).join('')}
+        </div>`;
+    }).join('')}
+  `;
+}
+
+function showRewardForm() {
+  const html = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h3>新建奖励</h3>
+        <div class="form-group">
+          <label>奖励标题</label>
+          <input id="rewardTitle" placeholder="如：去游乐园" autofocus>
+        </div>
+        <div class="form-group">
+          <label>档位</label>
+          <select id="rewardTier" onchange="document.getElementById('rewardCost').value=this.value==='small'?10:this.value==='medium'?30:60">
+            <option value="small">小奖励 (10分)</option>
+            <option value="medium">中奖励 (30分)</option>
+            <option value="large">大奖励 (60分)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>所需积分</label>
+          <input id="rewardCost" type="number" value="10" min="1">
+        </div>
+        <div class="form-group">
+          <label>描述</label>
+          <textarea id="rewardDesc" placeholder="奖励描述"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" style="background:#eee" onclick="closeModal()">取消</button>
+          <button class="btn btn-primary" onclick="submitRewardForm()">保存</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function submitRewardForm() {
+  const title = document.getElementById('rewardTitle').value.trim();
+  const tier = document.getElementById('rewardTier').value;
+  const pointCost = document.getElementById('rewardCost').value;
+  const description = document.getElementById('rewardDesc').value.trim();
+  if (!title) { showToast('请输入奖励标题'); return; }
+  if (!pointCost || pointCost < 1) { showToast('请输入有效积分'); return; }
+  addReward({ title, tier, pointCost, description });
+  closeModal();
+  renderApp();
+  showToast('奖励已创建');
+}
+
+function renderParentRedemptions() {
+  const pending = state.redemptions.filter(r => r.status === 'pending');
+  const approved = state.redemptions.filter(r => r.status === 'approved');
+  const fulfilled = state.redemptions.filter(r => r.status === 'fulfilled');
+  const renderList = (list, title, actions) => `
+    <div class="section-title">${title} (${list.length})</div>
+    ${list.length === 0 ? '<div class="card"><div class="empty-state"><div class="icon">📭</div>暂无记录</div></div>' :
+      list.map(r => {
+        const reward = state.rewards.find(rw => rw.id === r.rewardId) || { title: '已删除', pointCost: r.pointCost };
+        const child = state.children.find(c => c.id === r.childId) || { name: '未知', avatar: '❓' };
+        return `
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:start;">
+              <div style="flex:1;">
+                <div style="font-size:14px;font-weight:600;">${reward.title}</div>
+                <div style="font-size:12px;color:#999;margin:2px 0;">${child.avatar} ${child.name} · ${r.pointCost}分 · ${new Date(r.createdAt).toLocaleString('zh-CN')}</div>
+                ${r.childNote ? `<div style="font-size:13px;color:#666;margin:4px 0;">💬 ${r.childNote}</div>` : ''}
+                ${r.parentNote ? `<div style="font-size:13px;color:#999;">📌 ${r.parentNote}</div>` : ''}
+              </div>
+              <span class="status-badge status-${r.status}">${r.status === 'pending' ? '待审核' : r.status === 'approved' ? '待兑现' : '已兑现'}</span>
+            </div>
+            ${actions ? `<div style="margin-top:8px;display:flex;gap:6px;">${actions(r)}</div>` : ''}
+          </div>`;
+      }).join('')}
+  `;
+  return `
+    <div class="section-title" style="margin-top:0">✅ 兑换审核</div>
+    ${renderList(pending, '⏳ 待审核', r => `<button class="btn btn-success btn-sm" onclick="approveRedemption('${r.id}');renderApp();showToast('已通过')">通过</button>`)}
+    ${renderList(approved, '📦 待兑现', r => `<button class="btn btn-primary btn-sm" onclick="fulfillRedemption('${r.id}');renderApp();showToast('已兑现')">标记已兑现</button>`)}
+    ${renderList(fulfilled, '✨ 已兑现', null)}
+  `;
+}
+
+// --- Child Views ---
+
+function renderChildMap() {
+  const child = state.children[0] || { id: 'c1', name: '小明', avatar: '🧒' };
+  const balance = getBalance(child.id);
+  const t = today();
+  let totalTasks = 0, completedTasks = 0;
+  const dimCards = state.dimensions.map(d => {
+    const p = getDimensionProgress(d.id, t, child.id);
+    totalTasks += p.total;
+    completedTasks += p.completed;
+    return `
+      <div class="card dim-card ${p.lit ? 'lit' : ''}" style="border-left-color:${d.color}">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="dim-icon">${d.icon}</span>
+            <div>
+              <div class="dim-name" style="color:${d.color}">${d.name}</div>
+              <div class="dim-progress">${p.completed}/${p.total} ${p.lit ? '✨ 已点亮' : ''}</div>
+            </div>
+          </div>
+          <div style="font-size:18px;font-weight:700;color:${d.color}">${p.percent}%</div>
+        </div>
+        <div class="progress-bar"><div class="fill" style="width:${p.percent}%;background:${d.color}"></div></div>
+      </div>`;
+  }).join('');
+  const todayPercent = totalTasks > 0 ? Math.round(completedTasks / totalTasks * 100) : 0;
+  return `
+    <div class="top-bar">
+      <div style="font-size:14px;color:#666;">${child.avatar} ${child.name} 的成长地图</div>
+      <button class="reset-btn" onclick="if(confirm('确认重置所有数据？'))resetData()">🔄 重置</button>
+    </div>
+    <div class="balance-box">
+      <div class="label">今日完成率</div>
+      <div class="num">${todayPercent}%</div>
+      <div style="font-size:12px;opacity:0.8;margin-top:4px;">${completedTasks}/${totalTasks} 个任务 · 积分余额 ${balance}</div>
+    </div>
+    <div id="radarHost"></div>
+    <div class="section-title">五大成长维度</div>
+    ${dimCards}
+  `;
+}
+
+let currentFilter = 'all';
+
+function renderChildCheckin() {
+  const child = state.children[0] || { id: 'c1' };
+  const t = today();
+  const tasks = state.tasks.filter(t => t.isActive);
+  const filtered = currentFilter === 'all' ? tasks : tasks.filter(t => t.dimensionId === currentFilter);
+  const filterBar = `
+    <div class="filter-bar">
+      <button class="${currentFilter === 'all' ? 'active' : ''}" onclick="currentFilter='all';renderApp()">全部</button>
+      ${state.dimensions.map(d => `
+        <button class="${currentFilter === d.id ? 'active' : ''}" onclick="currentFilter='${d.id}';renderApp()">${d.icon} ${d.name}</button>
+      `).join('')}
+    </div>`;
+  const taskList = filtered.length === 0
+    ? '<div class="card"><div class="empty-state"><div class="icon">📝</div>暂无任务</div></div>'
+    : filtered.map(task => {
+      const dim = state.dimensions.find(d => d.id === task.dimensionId) || {};
+      const isDone = state.checkins.some(c => c.childId === child.id && c.taskId === task.id && c.date === t);
+      return `
+        <div class="task-item" onclick="if(!${isDone}){if(checkin('${child.id}','${task.id}')){renderApp();showToast('+${task.pointValue}分')}}">
+          <div style="display:flex;align-items:center;gap:10px;flex:1;cursor:pointer;">
+            <div class="task-check ${isDone ? 'done' : ''}">
+              ${isDone ? '✓' : ''}
+            </div>
+            <div>
+              <div style="font-size:14px;${isDone ? 'text-decoration:line-through;color:#999;' : ''}">${task.title}</div>
+              <span style="font-size:11px;color:${dim.color || '#999'}">${dim.icon || ''} ${dim.name || ''}</span>
+            </div>
+          </div>
+          <span class="points-badge">+${task.pointValue}</span>
+        </div>`;
+    }).join('');
+  const balance = getBalance(child.id);
+  return `
+    <div class="balance-box" style="padding:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div><div class="label">积分余额</div><div class="num" style="font-size:28px;">${balance}</div></div>
+        <div style="font-size:12px;opacity:0.8;">今日已打卡 ${state.checkins.filter(c => c.childId === child.id && c.date === t).length} 项</div>
+      </div>
+    </div>
+    <div class="section-title" style="margin-top:12px;">📝 今日打卡</div>
+    ${filterBar}
+    <div class="card" style="padding:0;">${taskList}</div>
+  `;
+}
+
+function renderChildPoints() {
+  const child = state.children[0] || { id: 'c1' };
+  const balance = getBalance(child.id);
+  const txs = state.pointTransactions
+    .filter(t => t.childId === child.id)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return `
+    <div class="balance-box">
+      <div class="label">积分余额</div>
+      <div class="num">${balance}</div>
+    </div>
+    <div class="section-title">流水记录 (${txs.length})</div>
+    ${txs.length === 0 ? '<div class="card"><div class="empty-state"><div class="icon">💰</div>暂无记录</div></div>' :
+      `<div class="card" style="padding:12px;">
+        ${txs.map(t => {
+          const isPositive = t.amount > 0;
+          let sourceLabel = '';
+          if (t.sourceType === 'task') {
+            const task = state.tasks.find(tk => tk.id === t.sourceId);
+            const checkin = state.checkins.find(c => c.id === t.sourceId);
+            const actualTask = task || (checkin ? state.tasks.find(tk => tk.id === checkin.taskId) : null);
+            sourceLabel = actualTask ? `打卡：${actualTask.title}` : '打卡';
+          } else if (t.sourceType === 'redemption') {
+            const r = state.redemptions.find(r => r.id === t.sourceId);
+            const reward = r ? state.rewards.find(rw => rw.id === r.rewardId) : null;
+            sourceLabel = reward ? `兑换：${reward.title}` : '兑换';
+          }
+          return `
+            <div class="tx-item">
+              <div>
+                <div style="font-size:13px;">${sourceLabel}</div>
+                <div style="font-size:11px;color:#999;">${new Date(t.createdAt).toLocaleString('zh-CN')}</div>
+              </div>
+              <div class="${isPositive ? 'tx-positive' : 'tx-negative'}" style="font-weight:600;font-size:14px;">
+                ${isPositive ? '+' : ''}${t.amount}
+              </div>
+            </div>`;
+        }).join('')}
+      </div>`}
+  `;
+}
+
+function renderChildRewards() {
+  const child = state.children[0] || { id: 'c1' };
+  const balance = getBalance(child.id);
+  const tiers = [
+    { id: 'small', name: '🟢 小奖励', color: '#4CAF50' },
+    { id: 'medium', name: '🟡 中奖励', color: '#FF9800' },
+    { id: 'large', name: '🔴 大奖励', color: '#f44336' },
+  ];
+  return `
+    <div class="balance-box">
+      <div class="label">积分余额</div>
+      <div class="num">${balance}</div>
+    </div>
+    <div class="section-title">🎁 奖励兑换</div>
+    ${tiers.map(tier => {
+      const rewards = state.rewards.filter(r => r.tier === tier.id && r.isActive);
+      if (rewards.length === 0) return '';
+      return `
+        <div class="card">
+          <div style="font-weight:600;color:${tier.color};margin-bottom:8px;">${tier.name}</div>
+          ${rewards.map(r => {
+            const canAfford = balance >= r.pointCost;
+            const myRedemptions = state.redemptions.filter(rd => rd.childId === child.id && rd.rewardId === r.id && rd.status !== 'fulfilled');
+            const alreadyPending = myRedemptions.length > 0;
+            return `
+              <div class="reward-item">
+                <div style="flex:1;">
+                  <div style="font-size:14px;font-weight:500;">${r.title}</div>
+                  <div style="font-size:12px;color:#999;">${r.description}</div>
+                  <span class="points-badge">${r.pointCost}分</span>
+                  ${alreadyPending ? '<span class="status-badge status-pending" style="margin-left:4px;">兑换中</span>' : ''}
+                  ${!canAfford && !alreadyPending ? `<span style="font-size:11px;color:#f44336;margin-left:4px;">差 ${r.pointCost - balance} 分</span>` : ''}
+                </div>
+                <button class="btn ${canAfford ? 'btn-primary' : ''} btn-sm" ${!canAfford || alreadyPending ? 'disabled' : ''}
+                  onclick="showRedeemForm('${r.id}')">${alreadyPending ? '已申请' : canAfford ? '兑换' : '不足'}</button>
+              </div>`;
+          }).join('')}
+        </div>`;
+    }).join('')}
+  `;
+}
+
+function showRedeemForm(rewardId) {
+  const reward = state.rewards.find(r => r.id === rewardId);
+  if (!reward) return;
+  const child = state.children[0];
+  const balance = getBalance(child.id);
+  const html = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h3>兑换确认</h3>
+        <div style="margin-bottom:12px;">
+          <div style="font-size:15px;font-weight:600;">${reward.title}</div>
+          <div style="font-size:13px;color:#999;">${reward.description}</div>
+          <div style="margin-top:8px;">
+            <span class="points-badge">${reward.pointCost}分</span>
+            <span style="font-size:12px;color:#666;margin-left:8px;">当前余额：${balance} → 兑换后：${balance - reward.pointCost}</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>这个奖励对应了你哪一段坚持？（选填）</label>
+          <textarea id="redeemNote" placeholder="如：我坚持阅读了一周..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" style="background:#eee" onclick="closeModal()">取消</button>
+          <button class="btn btn-primary" onclick="submitRedeem('${rewardId}')">确认兑换</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function submitRedeem(rewardId) {
+  const note = document.getElementById('redeemNote').value.trim();
+  const child = state.children[0];
+  if (createRedemption(child.id, rewardId, note)) {
+    closeModal();
+    renderApp();
+    showToast('兑换成功，等待家长审核');
+  }
+}
+
+// ============================================================
+// Init
+// ============================================================
+renderApp();
+</script>
+</body>
+</html>

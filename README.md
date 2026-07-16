@@ -1,138 +1,96 @@
-# Summer Growth Points Bank 暑假成长积分银行
+# Summer Growth Points Bank / 暑假成长积分银行
 
-[![CI](https://github.com/ZedeX/growth-points-bank/actions/workflows/ci.yml/badge.svg)](https://github.com/ZedeX/growth-points-bank/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+A lightweight HTML prototype of a family "growth points bank" — gamifying children's summer growth across 5 dimensions (learning, sports, self-control, exploration, practice) via a points currency.
 
-A family multi-tenant web platform that gamifies summer growth — children complete tasks across five growth dimensions (学习力/运动力/自控力/探索力/实践力), earn points, and redeem parent-defined rewards. Includes weekly double-blind reviews and encrypted growth diaries.
+**Single file. Zero dependencies. Double-click to run.**
 
-[中文版 README](./README.zh-CN.md)
+## Quick Start
+
+1. Download `index.html`
+2. Double-click to open in any modern browser (Chrome, Firefox, Edge, Safari)
+3. That's it. No install, no build, no server required.
+
+Data persists in browser `localStorage`. To reset, click the 🔄 button in the top-right of the map view, or run `resetData()` in the browser console.
 
 ## Features
 
-- **Multi-family tenancy** — Application-level `family_id` row-level isolation (ADR-0006)
-- **Dual JWT auth** — Separate parent/child secrets with `token_version` revocation (ADR-0002)
-- **Points integrity** — SERIALIZABLE transaction isolation + partial UNIQUE index + CHECK constraints; balance derived from `point_transactions.balance_after` (ADR-0003)
-- **Field-level encryption** — AES-256-GCM with HKDF-SHA256 per-row key derivation for PII (ADR-0009)
-- **Double-blind weekly review** — Both sides commit before content is mutually visible (ADR-0005)
-- **Redemption state machine** — pending → approved → fulfilled / rejected (ADR-0004)
-- **Background jobs** — node-cron in-process with exponential backoff retry (ADR-0010)
+| Role | View | What you can do |
+|------|------|-----------------|
+| Parent | Growth Map | View child's radar chart + 5-dimension progress |
+| Parent | Task Management | Create / delete tasks (title, dimension, points) |
+| Parent | Reward Management | Create / delete rewards (3 tiers) |
+| Parent | Redemption Review | Approve pending redemptions, mark fulfilled |
+| Child | Growth Map | View own radar chart + dimension progress |
+| Child | Daily Check-in | Check off tasks by dimension filter, earn points |
+| Child | Points Record | View balance + transaction history |
+| Child | Reward Exchange | Browse rewards, spend points, submit redemption |
+
+### Core Loop
+
+```
+Child checks in task → earns points → spends points on reward → parent approves → parent fulfills
+```
+
+### Business Rules
+
+- Points deducted at redemption submission (not at approval)
+- Redemption state machine: `pending → approved → fulfilled` (no reject/cancel)
+- Same task can only be checked in once per day
+- Dimension "lit" when all its tasks completed today
+- Balance computed from transaction sum (no stored balance)
+
+## Testing
+
+### Manual Testing
+
+Open `index.html`, press F12 for DevTools. Follow the 14 test scenarios in [docs/PROTOTYPE_TDD.md](docs/PROTOTYPE_TDD.md).
+
+Console helpers:
+```js
+getData()                    // View all localStorage data
+resetData()                  // Reset to seed data
+getBalance('c1')             // Query child balance
+getDimensionProgress('d1', '2026-07-16')  // Query dimension progress
+```
+
+### Optional: Playwright Automated Tests
+
+```bash
+npm init -y
+npm install -D @playwright/test
+npx playwright install chromium
+npx playwright test
+```
+
+See [docs/PROTOTYPE_TDD.md](docs/PROTOTYPE_TDD.md) §3 for the test script.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [docs/PRD.md](docs/PRD.md) | Product Requirements Document (full feature spec, Chinese) |
+| [docs/PROTOTYPE_SPEC.md](docs/PROTOTYPE_SPEC.md) | Prototype specification (data structure, views, business rules) |
+| [docs/PROTOTYPE_TDD.md](docs/PROTOTYPE_TDD.md) | Prototype test scenarios (14 manual + 5 Playwright) |
 
 ## Tech Stack
 
-- **Frontend**: React 18 + TypeScript 5 + Vite 5 + TanStack Query v5 + Zustand 4 + Tailwind CSS 3
-- **Backend**: Node.js 20+ + Fastify 4 + Drizzle ORM 0.30 + PostgreSQL 16 (Neon)
-- **Auth**: jose (JWT) + argon2 (password) + HMAC-SHA256 (access_token storage)
-- **Logging**: pino + Sentry (Phase 2)
-- **Monorepo**: pnpm workspace (`apps/web/` + `apps/api/` + `packages/shared/`)
+- **HTML/CSS/JS** — vanilla, zero dependencies
+- **localStorage** — single-key JSON persistence
+- **Canvas API** — radar chart rendering
+- **No framework, no build tool, no package manager**
 
-## Project Structure
+## Seed Data
 
-```
-growth-points-bank/
-├── apps/
-│   ├── api/                    # Fastify backend
-│   │   └── src/server/
-│   │       ├── crypto/         # AES-256-GCM + HMAC-SHA256
-│   │       ├── db/             # Drizzle schema, migrations, seed
-│   │       ├── jobs/           # node-cron scheduler
-│   │       ├── middleware/     # auth + multi-tenant
-│   │       ├── routes/         # 8 route modules
-│   │       └── services/       # auth + points ledger
-│   └── web/                    # Vite + React frontend
-│       └── src/
-│           ├── api/            # API client
-│           ├── pages/          # 8 page components
-│           └── App.tsx         # Router + navigation
-├── packages/
-│   └── shared/                 # Zod schemas + constants
-├── docs/
-│   ├── architecture/           # 17 ADRs + review report + traceability
-│   ├── PRD.md                  # Product requirements (781 lines)
-│   ├── DETAILED_DESIGN.md      # 12-chapter technical design
-│   ├── ARCHITECTURE.md         # C4 model architecture
-│   ├── API.md                  # 18-chapter API reference
-│   └── TDD_SPEC.md             # 97+4 test specifications
-└── .github/workflows/ci.yml    # GitHub Actions CI
-```
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 20+
-- pnpm 11+
-- PostgreSQL 16+ (or [Neon](https://neon.tech) free tier)
-
-### Installation
-
-```bash
-# Clone
-git clone https://github.com/ZedeX/growth-points-bank.git
-cd growth-points-bank
-
-# Install dependencies
-pnpm install
-
-# Approve native builds (argon2, esbuild)
-pnpm approve-builds argon2 esbuild es5-ext
-
-# Copy env vars and fill in secrets
-cp .env.example .env
-# Edit .env with your DATABASE_URL, JWT secrets, encryption key
-
-# Run database migrations
-pnpm db:migrate
-
-# Seed demo data (5 dimensions + 45 task templates)
-pnpm db:seed
-
-# Start both frontend and backend in dev mode
-pnpm dev
-```
-
-### Development
-
-- Frontend: http://localhost:5173
-- Backend: http://localhost:3000/api/health
-- API docs: see `docs/API.md`
-
-### Build
-
-```bash
-pnpm build       # Build all packages
-pnpm typecheck   # TypeScript check
-pnpm test        # Run all tests
-```
-
-## Architecture
-
-This project follows a rigorous ADR-driven architecture. 17 Architecture Decision Records cover every major technical decision, from tech stack selection to encryption strategy. The architecture was reviewed and passed (MVP Phase 1 scope) on 2026-07-16.
-
-Key ADRs:
-- [ADR-0001](docs/architecture/adr-0001-tech-stack.md) — Tech Stack
-- [ADR-0002](docs/architecture/adr-0002-authentication.md) — Dual JWT Authentication
-- [ADR-0003](docs/architecture/adr-0003-points-integrity.md) — Points Integrity (SERIALIZABLE)
-- [ADR-0009](docs/architecture/adr-0009-data-encryption.md) — Field-Level Encryption
-- [ADR-0011](docs/architecture/adr-0011-task-and-dimension-management.md) — Task & Dimension Management
-- [ADR-0014](docs/architecture/adr-0014-growth-diary-service.md) — Growth Diary Service
-- [ADR-0015](docs/architecture/adr-0015-audit-log-compliance.md) — Audit Log & Compliance
-
-Full review report: [architecture-review-2026-07-16.md](docs/architecture/architecture-review-2026-07-16.md)
-
-## Domain Model
-
-Five growth dimensions (PRD §3.1):
-
-| Code | Name | Color |
-|------|------|-------|
-| `learning` | 学习力 | #2196F3 |
-| `sports` | 运动力 | #FF9800 |
-| `self_control` | 自控力 | #9C27B0 |
-| `exploration` | 探索力 | #4CAF50 |
-| `practice` | 实践力 | #F44336 |
-
-Age groups: 6-8, 9-11, 12-14. Task difficulty multipliers: easy ×1.0, medium ×1.5, hard ×2.0.
+On first load, the app auto-seeds:
+- 5 growth dimensions (learning, sports, self-control, exploration, practice)
+- 15 tasks (3 per dimension, 10-30 points each)
+- 6 rewards (2 per tier: small/medium/large)
+- 1 child ("小明")
 
 ## License
 
-MIT
+[MIT](LICENSE)
+
+---
+
+> 中文说明：本项目是一个家庭"暑假成长积分银行"原型，用最轻量的单文件 HTML 实现核心闭环（打卡→赚积分→兑换奖励）。双击 `index.html` 即可在浏览器中运行，无需安装任何依赖。详细文档见 `docs/` 目录。

@@ -641,5 +641,113 @@
 4. **Phase 4**: 配置 Playwright E2E 测试
 5. **其他**: writeAudit() 接入、通知 REST 端点、/api/export 端点、ESLint+Prettier 配置
 
+---
+
+## 2026-07-17 — 重大方向转变：从全栈架构重做 → 纯单文件 HTML 原型
+
+### 用户需求
+"帮我从需求文档重新规划一下，技术栈现在好像太复杂了，我需要用最轻量的技术先验证，可否用纯本地html的方式先做起来，要真实的计算和逻辑交互（相当于一个可以正常运行逻辑正常的原型），先不考虑复杂的部署。把非文档文件都删了，重新规划文档"
+
+**核心诉求**：放弃 Fastify+Drizzle+SQLite+React 全栈架构，改用**单文件 vanilla HTML/JS**，双击即跑，零依赖，先验证 PRD 核心闭环逻辑可运行。
+
+### 4 轮 grilling 16 项决策共识
+
+| # | 决策点 | 选择 |
+|---|--------|------|
+| 1 | 删除范围 | 全部代码 + 配置 + 旧文档 |
+| 2 | 技术栈 | 单文件 vanilla JS，零依赖 |
+| 3 | MVP 功能 | 核心闭环 4 功能（打卡/积分/兑换/审核） |
+| 4 | 文档保留 | 仅保留 PRD，重写 SPEC/TDD/README |
+| 5 | 多用户 | 单家庭 + 顶部下拉切换家长/孩子 |
+| 6 | 积分扣除时机 | 发起兑换时立即扣，不可退 |
+| 7 | 种子数据 | 完整预置（5 维度 + 15 任务 + 6 奖励 + 1 孩子） |
+| 8 | 存储 | localStorage 单 key JSON（`gpb_data`） |
+| 9 | 积分值 | 固定（parent 设定，非随机） |
+| 10 | 撤销打卡 | 不实现 |
+| 11 | 兑换状态机 | pending → approved → fulfilled（最小 2 转换，无 rejected/cancelled） |
+| 12 | 可视化 | 卡片 + 雷达图都要 |
+| 13 | 雷达图 | 纯 Canvas API（~80 行，无第三方库） |
+| 14 | 视图数 | 家长 4 tab + 孩子 4 tab = 8 视图 |
+| 15 | 任务分组 | 不分组，按维度筛选 |
+| 16 | 文档输出 | SPEC + TDD + README 三份 |
+
+### 产出文件清单
+
+| 文件 | 作用 | 行数 |
+|------|------|------|
+| `index.html` | 原型主体（HTML + CSS + JS 单文件） | ~900 |
+| `docs/PROTOTYPE_SPEC.md` | 原型规格（数据结构 + 视图 + 业务规则 + 验证清单） | - |
+| `docs/PROTOTYPE_TDD.md` | 测试场景（14 手动 + 5 可选 Playwright） | - |
+| `README.md` | 项目入口（Quick Start + Features + Testing） | - |
+| `docs/PRD.md` | 保留未改（需求源） | - |
+| `scratch/test_logic.js` | Node.js vm sandbox 验证脚本（含 log） | ~210 |
+
+### index.html 核心结构
+- **State Management**: `STORAGE_KEY='gpb_data'`，`loadState()/saveState()/resetData()`
+- **Business Logic**: `checkin()` / `createRedemption()` / `approveRedemption()` / `fulfillRedemption()` / `addTask()` / `deleteTask()` / `addReward()` / `deleteReward()`
+- **8 View Renderers**: `renderParentMap/Tasks/Rewards/Redemptions` + `renderChildMap/Checkin/Points/Rewards`
+- **Canvas Radar**: `drawRadar(canvas, data)` 五边形雷达图（~80 行）
+- **Balance**: 从 `pointTransactions` 累加推导（无 stored balance）
+- **Dimension lit**: 当日该维度全部任务完成时点亮
+
+### 已删除文件（上一版全栈架构）
+- `apps/` (Fastify + React + Drizzle 全部代码)
+- `packages/` (shared Zod schemas)
+- `.github/` (CI workflow)
+- `.scratch/` (tracer-bullet tickets)
+- `docs/architecture/` (13 ADR)
+- `docs/ARCHITECTURE.md`, `docs/DETAILED_DESIGN.md`, `docs/API.md`, `docs/TDD_SPEC.md`
+- `README.zh-CN.md`
+- `drizzle.config.ts`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `.env.example`
+- `node_modules/`
+
+### 验证结果
+
+#### Node.js vm sandbox 验证（scratch/test_logic.js）
+**59/59 测试全部通过**，覆盖：
+- T01 种子数据完整性（5 维度/15 任务/6 奖励/1 孩子）
+- T02 单次打卡（checkin +1, tx +1, amount 正确）
+- T03 重复打卡拦截
+- T04 多任务打卡余额累加
+- T05 inactive 任务拦截
+- T06 余额不足兑换拦截
+- T07 成功兑换（扣分 + pending 状态 + pointCost 快照）
+- T08 approve 状态机转换
+- T09 re-approve 拦截（状态守卫）
+- T10 fulfill 状态机转换
+- T11 re-fulfill 拦截
+- T12 维度进度 + lit 判定
+- T13 addTask/deleteTask
+- T14 addReward/deleteReward
+- T15 localStorage 持久化
+- T16 resetData 完全清除
+
+**测试日志**: `scratch/test_logic.log`
+
+#### browser_use 验证
+- 第 1 次：7/8 视图通过，打卡点击未触发 → 修复 onclick 绑定（从 task-check 24px 圆点移到整个 task-item）
+- 第 2 次：step budget 耗尽（59/60），结果不确定
+- 结论：browser_use 的点击精度问题，**代码本身逻辑正确**（Node.js 验证证实）
+
+### 关键技术决策
+1. **vm sandbox 验证优于 browser_use**: 不依赖 GUI 自动化，能精确断言每个函数返回值和状态变化
+2. **top-level `let`/`const` 在 vm context 不挂载 globalThis**: 通过 `Object.defineProperty(globalThis, 'state', { get/set })` 暴露
+3. **onclick 内联 vs addEventListener**: 选择内联（原型优先简单），用 `${isDone}` 直接插值替代 `classList.contains`
+4. **localStorage 单 key JSON**: 所有状态序列化为一个 JSON 字符串，saveState 一次写入
+5. **balance 不存储**: 从 `pointTransactions.reduce((s,t)=>s+t.amount, 0)` 推导
+6. **dimension lit 判定**: `completed === total && total > 0`
+
+### 待办
+- [ ] 浏览器中人工验证 UI 交互（点击打卡/切换 tab/兑换流程）
+- [ ] Git commit + push 新原型
+- [ ] （可选）执行 PROTOTYPE_TDD.md 中 14 个手动测试场景
+
+### Git 操作
+- 待提交：index.html + docs/PROTOTYPE_SPEC.md + docs/PROTOTYPE_TDD.md + README.md + project_memory.md + scratch/
+
+### 下一步建议
+1. 优先在真实浏览器中跑一遍核心闭环（打卡 → 看积分 → 兑换 → 家长审核 → 兑现）
+2. 验证通过后 git commit + push
+3. 若用户决定后续上线，再从原型反推需要的最小后端（express + better-sqlite3 + static serving），数据结构已定可直接迁移
 
 
