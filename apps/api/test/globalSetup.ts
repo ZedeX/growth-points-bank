@@ -22,6 +22,9 @@ export async function setup(): Promise<void> {
     console.error('[globalSetup] Migration failed:', err);
     throw err;
   }
+
+  // Note: Per-session statement_timeout / lock_timeout / idle_in_transaction_session_timeout
+  // are set in db/client.ts via pool.on('connect') so they apply to ALL connections.
 }
 
 export async function teardown(): Promise<void> {

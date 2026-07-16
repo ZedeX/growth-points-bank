@@ -9,6 +9,17 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000,
 });
 
+// Apply per-session timeouts to every new connection so stuck queries
+// fail fast instead of hanging the test suite. In test mode we use
+// aggressive timeouts; in production we leave defaults.
+if (process.env.NODE_ENV === 'test') {
+  pool.on('connect', (client) => {
+    client.query("SET statement_timeout = '5s'");
+    client.query("SET lock_timeout = '2s'");
+    client.query("SET idle_in_transaction_session_timeout = '5s'");
+  });
+}
+
 export const db = drizzle(pool, { schema });
 export { schema };
 export type DrizzleDB = typeof db;
