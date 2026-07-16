@@ -11,3 +11,4 @@ Thumbs.db
 .scratch/local/
 drizzle/
 *.tsbuildinfo
+apps/api/data/

@@ -11,23 +11,8 @@ jobs:
     name: Build & Test
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: gpb_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
-      DATABASE_URL: postgresql://test:test@localhost:5432/gpb_test
+      DATABASE_URL: data/gpb.db
       PARENT_JWT_SECRET: test-parent-secret-32-chars-minimum-length
       CHILD_JWT_SECRET: test-child-secret-32-chars-minimum-length
       AUTH_HMAC_SECRET: test-hmac-secret-32-chars-minimum
@@ -53,7 +38,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Approve native builds
-        run: pnpm approve-builds argon2 esbuild es5-ext || true
+        run: pnpm approve-builds better-sqlite3 argon2 esbuild es5-ext || true
 
       - name: Typecheck
         run: pnpm typecheck

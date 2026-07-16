@@ -48,7 +48,7 @@ export async function rewardRoutes(app: FastifyInstance) {
     const body = request.body as any;
     const [updated] = await db.update(schema.rewards).set({
       ...body,
-      updatedAt: new Date(),
+      updatedAt: new Date().toISOString(),
     }).where(and(eq(schema.rewards.id, id), eq(schema.rewards.familyId, familyId))).returning();
     if (!updated) return reply.code(404).send({ error: { code: 9002, message: 'Reward not found' } });
     return updated;
@@ -61,7 +61,7 @@ export async function rewardRoutes(app: FastifyInstance) {
     const familyId = await requireFamilyId(request, reply);
     if (!familyId) return;
     const { id } = request.params as { id: string };
-    await db.update(schema.rewards).set({ isActive: false, updatedAt: new Date() })
+    await db.update(schema.rewards).set({ isActive: false, updatedAt: new Date().toISOString() })
       .where(and(eq(schema.rewards.id, id), eq(schema.rewards.familyId, familyId)));
     return reply.code(204).send();
   });
@@ -95,37 +95,38 @@ export async function rewardRoutes(app: FastifyInstance) {
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
     weekStart.setHours(0, 0, 0, 0);
+    const weekStartIso = weekStart.toISOString();
 
-    const weekCountResult = await db.execute(sql`
-      SELECT COUNT(*) as cnt FROM app.reward_redemptions
+    const weekCountResult = db.get(sql`
+      SELECT COUNT(*) as cnt FROM reward_redemptions
       WHERE child_id = ${childId} AND reward_id = ${reward.id}
-        AND redeemed_at >= ${weekStart}
+        AND redeemed_at >= ${weekStartIso}
         AND status NOT IN ('cancelled', 'rejected')
-    `);
+    `) as { cnt: number } | undefined;
 
-    if (Number(weekCountResult.rows[0]?.cnt ?? 0) >= reward.weeklyLimitPerChild) {
+    if (Number(weekCountResult?.cnt ?? 0) >= reward.weeklyLimitPerChild) {
       return reply.code(400).send({ error: { code: 4002, message: 'Weekly limit reached' } });
     }
 
     try {
       const result = await withSerializableRetry(async () => {
-        return db.transaction(async (tx) => {
+        return db.transaction((tx) => {
           // Deduct points
-          const pointsResult = await recordPointsTx(tx, childId, -reward.pointCost, 'reward', reward.id);
+          const pointsResult = recordPointsTx(tx, childId, -reward.pointCost, 'reward', reward.id);
 
           // Create redemption
-          const [redemption] = await tx.insert(schema.rewardRedemptions).values({
+          const [redemption] = tx.insert(schema.rewardRedemptions).values({
             childId,
             rewardId: reward.id,
             pointCost: reward.pointCost,
             status: 'pending',
-          }).returning();
+          }).returning().all();
 
           // Increment claimed count
-          await tx.update(schema.rewards).set({
+          tx.update(schema.rewards).set({
             totalClaimed: sql`${schema.rewards.totalClaimed} + 1`,
-            updatedAt: new Date(),
-          }).where(eq(schema.rewards.id, reward.id));
+            updatedAt: new Date().toISOString(),
+          }).where(eq(schema.rewards.id, reward.id)).run();
 
           return { redemption, balanceAfter: pointsResult.balanceAfter };
         });
@@ -194,7 +195,21 @@ export async function rewardRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: { code: 9002, message: 'Redemption not found' } });
     }
 
-    const now = new Date();
+    // Validate state transition
+    const currentStatus = redemption.reward_redemptions.status;
+    const newStatus = parsed.data.status;
+    const validTransitions: Record<string, string[]> = {
+      pending: ['approved', 'rejected', 'cancelled'],
+      approved: ['fulfilled', 'cancelled'],
+      rejected: [],
+      fulfilled: [],
+      cancelled: [],
+    };
+    if (!validTransitions[currentStatus]?.includes(newStatus)) {
+      return reply.code(400).send({ error: { code: 4004, message: `Invalid transition: ${currentStatus} → ${newStatus}` } });
+    }
+
+    const now = new Date().toISOString();
     const updateData: any = { status: parsed.data.status, updatedAt: now };
     if (parsed.data.parent_note) updateData.parentNote = parsed.data.parent_note;
     if (parsed.data.status === 'approved') updateData.approvedAt = now;
@@ -203,10 +218,10 @@ export async function rewardRoutes(app: FastifyInstance) {
     // If rejected, refund points
     if (parsed.data.status === 'rejected' || parsed.data.status === 'cancelled') {
       await withSerializableRetry(async () => {
-        return db.transaction(async (tx) => {
-          await tx.update(schema.rewardRedemptions).set(updateData).where(eq(schema.rewardRedemptions.id, id));
+        return db.transaction((tx) => {
+          tx.update(schema.rewardRedemptions).set(updateData).where(eq(schema.rewardRedemptions.id, id)).run();
           // Refund: positive amount with 'revocation' source
-          await recordPointsTx(tx, redemption.reward_redemptions.childId, redemption.reward_redemptions.pointCost, 'revocation', redemption.reward_redemptions.id);
+          recordPointsTx(tx, redemption.reward_redemptions.childId, redemption.reward_redemptions.pointCost, 'revocation', redemption.reward_redemptions.id);
         });
       });
     } else {

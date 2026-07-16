@@ -89,7 +89,7 @@ export async function taskRoutes(app: FastifyInstance) {
 
     const [updated] = await db.update(schema.tasks).set({
       ...body,
-      updatedAt: new Date(),
+      updatedAt: new Date().toISOString(),
     }).where(and(eq(schema.tasks.id, id), eq(schema.tasks.familyId, familyId))).returning();
 
     if (!updated) {
@@ -108,7 +108,7 @@ export async function taskRoutes(app: FastifyInstance) {
 
     const [updated] = await db.update(schema.tasks).set({
       isActive: false,
-      updatedAt: new Date(),
+      updatedAt: new Date().toISOString(),
     }).where(and(eq(schema.tasks.id, id), eq(schema.tasks.familyId, familyId))).returning();
 
     if (!updated) {

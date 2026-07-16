@@ -35,18 +35,18 @@ export async function checkinRoutes(app: FastifyInstance) {
 
     try {
       const result = await withSerializableRetry(async () => {
-        return db.transaction(async (tx) => {
+        return db.transaction((tx) => {
           // Insert check-in
-          const [checkin] = await tx.insert(schema.checkins).values({
+          const [checkin] = tx.insert(schema.checkins).values({
             childId,
             taskId: task.id,
             date: parsed.data.date,
             note: parsed.data.note || null,
-          }).returning();
+          }).returning().all();
 
           // Award points
           const effectivePoints = Math.round(task.pointValue * task.difficultyMultiplier / 100);
-          const pointsResult = await recordPointsTx(tx, childId, effectivePoints, 'task', checkin.id);
+          const pointsResult = recordPointsTx(tx, childId, effectivePoints, 'task', checkin.id);
 
           return { checkin, pointsAwarded: effectivePoints, balanceAfter: pointsResult.balanceAfter };
         });
@@ -54,7 +54,8 @@ export async function checkinRoutes(app: FastifyInstance) {
 
       return reply.code(201).send(result);
     } catch (err: any) {
-      if (err?.code === '23505') {
+      const sqliteErr = err?.cause || err;
+      if (sqliteErr?.code === 'SQLITE_CONSTRAINT_UNIQUE' || sqliteErr?.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
         return reply.code(409).send({ error: { code: 3002, message: 'Already checked in for this task today' } });
       }
       throw err;
@@ -99,27 +100,27 @@ export async function checkinRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
 
     const result = await withSerializableRetry(async () => {
-      return db.transaction(async (tx) => {
+      return db.transaction((tx) => {
         // Fetch existing checkin first to get taskId (need it to compute points to deduct)
-        const [existing] = await tx.select().from(schema.checkins)
-          .where(eq(schema.checkins.id, id)).limit(1);
+        const [existing] = tx.select().from(schema.checkins)
+          .where(eq(schema.checkins.id, id)).limit(1).all();
         if (!existing) throw { code: 9002, message: 'Check-in not found' };
         if (existing.revokedByParent) throw { code: 3002, message: 'Already revoked' };
 
         // Look up the task to compute the effective points that were awarded
-        const [task] = await tx.select().from(schema.tasks)
-          .where(eq(schema.tasks.id, existing.taskId)).limit(1);
+        const [task] = tx.select().from(schema.tasks)
+          .where(eq(schema.tasks.id, existing.taskId)).limit(1).all();
         const effectivePoints = task
           ? Math.round(task.pointValue * task.difficultyMultiplier / 100)
           : 0;
 
-        const [checkin] = await tx.update(schema.checkins).set({
+        const [checkin] = tx.update(schema.checkins).set({
           revokedByParent: true,
-          revokedAt: new Date(),
-        }).where(eq(schema.checkins.id, id)).returning();
+          revokedAt: new Date().toISOString(),
+        }).where(eq(schema.checkins.id, id)).returning().all();
 
         // Deduct the same amount that was originally awarded
-        const pointsResult = await recordPointsTx(tx, checkin.childId, -effectivePoints, 'revocation', checkin.id);
+        const pointsResult = recordPointsTx(tx, checkin.childId, -effectivePoints, 'revocation', checkin.id);
         return { checkin, balanceAfter: pointsResult.balanceAfter };
       });
     });

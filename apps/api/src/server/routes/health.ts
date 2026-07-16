@@ -7,7 +7,7 @@ export async function healthRoutes(app: FastifyInstance) {
     try {
       // Simple DB connectivity check
       const { db } = await import('../db/client.js');
-      await db.execute(sql`SELECT 1`);
+      await db.run(sql`SELECT 1`);
       return { status: 'ready' };
     } catch {
       return { status: 'not_ready' };

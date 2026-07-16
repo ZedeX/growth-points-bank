@@ -28,7 +28,7 @@ export async function diaryRoutes(app: FastifyInstance) {
         content: decryptField('growth_diaries', d.id, d.content),
         category: d.category,
         weekStartDate: d.weekStartDate,
-        createdAt: d.createdAt.toISOString(),
+        createdAt: d.createdAt,
       })),
     };
   });
@@ -43,28 +43,30 @@ export async function diaryRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: { code: 9001, message: parsed.error.message } });
     }
 
-    return db.transaction(async (tx) => {
-      const [diary] = await tx.insert(schema.growthDiaries).values({
+    const diary = db.transaction((tx) => {
+      const [diary] = tx.insert(schema.growthDiaries).values({
         childId,
-        title: parsed.data.title,  // encrypted below
+        title: parsed.data.title,
         content: parsed.data.content,
         category: parsed.data.category,
         weekStartDate: parsed.data.week_start_date || null,
         createdByChild: true,
-      }).returning();
+      }).returning().all();
 
-      await tx.update(schema.growthDiaries).set({
+      tx.update(schema.growthDiaries).set({
         title: encryptField('growth_diaries', diary.id, parsed.data.title),
         content: encryptField('growth_diaries', diary.id, parsed.data.content),
-      }).where(eq(schema.growthDiaries.id, diary.id));
+      }).where(eq(schema.growthDiaries.id, diary.id)).run();
 
-      return reply.code(201).send({
-        id: diary.id,
-        title: parsed.data.title,
-        content: parsed.data.content,
-        category: diary.category,
-        createdAt: diary.createdAt.toISOString(),
-      });
+      return diary;
+    });
+
+    return reply.code(201).send({
+      id: diary.id,
+      title: parsed.data.title,
+      content: parsed.data.content,
+      category: diary.category,
+      createdAt: diary.createdAt,
     });
   });
 
@@ -76,7 +78,7 @@ export async function diaryRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const body = request.body as any;
 
-    const updates: any = { updatedAt: new Date() };
+    const updates: any = { updatedAt: new Date().toISOString() };
     if (body.title) updates.title = encryptField('growth_diaries', id, body.title);
     if (body.content) updates.content = encryptField('growth_diaries', id, body.content);
     if (body.category) updates.category = body.category;

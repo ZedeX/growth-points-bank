@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db, schema } from '../db/client.js';
 import { eq, and, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { requireParent, requireChild, requireFamilyId } from '../middleware/auth.js';
 import { submitChildReviewSchema, submitParentReviewSchema } from '@gpb/shared';
 
@@ -75,7 +76,7 @@ export async function reviewRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: { code: 9001, message: parsed.error.message } });
     }
 
-    const now = new Date();
+    const now = new Date().toISOString();
     const weekStart = parsed.data.week_start_date;
 
     // Check existing
@@ -88,31 +89,31 @@ export async function reviewRoutes(app: FastifyInstance) {
     }
 
     const bothCommitted = !!existing?.parentCommittedAt;
+    const reviewId = randomUUID();
 
-    await db.execute(sql`
-      INSERT INTO app.weekly_reviews (child_id, week_start_date, best_thing, difficulty, child_request, child_committed_at, locked_at, updated_at)
-      VALUES (${childId}, ${weekStart}, ${parsed.data.best_thing}, ${parsed.data.difficulty}, ${parsed.data.child_request}, ${now},
-        CASE WHEN ${bothCommitted} THEN ${now} ELSE NULL END, ${now})
+    db.run(sql`
+      INSERT INTO weekly_reviews (id, child_id, week_start_date, best_thing, difficulty, child_request, child_committed_at, locked_at, updated_at, created_at)
+      VALUES (${reviewId}, ${childId}, ${weekStart}, ${parsed.data.best_thing}, ${parsed.data.difficulty}, ${parsed.data.child_request}, ${now}, NULL, ${now}, ${now})
       ON CONFLICT (child_id, week_start_date) DO UPDATE SET
         best_thing = EXCLUDED.best_thing,
         difficulty = EXCLUDED.difficulty,
         child_request = EXCLUDED.child_request,
         child_committed_at = ${now},
-        locked_at = CASE WHEN app.weekly_reviews.parent_committed_at IS NOT NULL THEN ${now} ELSE app.weekly_reviews.locked_at END,
+        locked_at = CASE WHEN weekly_reviews.parent_committed_at IS NOT NULL THEN ${now} ELSE weekly_reviews.locked_at END,
         updated_at = ${now}
     `);
 
     // If locked, compute aggregates
     if (bothCommitted) {
-      await db.execute(sql`
-        UPDATE app.weekly_reviews SET
-          task_count = (SELECT COUNT(*) FROM app.checkins WHERE child_id = ${childId} AND date >= ${weekStart}::date AND date < ${weekStart}::date + INTERVAL '7 days' AND revoked_by_parent = false),
-          point_earned = (SELECT COALESCE(SUM(amount), 0) FROM app.point_transactions WHERE child_id = ${childId} AND amount > 0 AND created_at >= ${weekStart}::date AND created_at < ${weekStart}::date + INTERVAL '7 days'),
+      db.run(sql`
+        UPDATE weekly_reviews SET
+          task_count = (SELECT COUNT(*) FROM checkins WHERE child_id = ${childId} AND date >= ${weekStart} AND date < date(${weekStart}, '+7 days') AND revoked_by_parent = 0),
+          point_earned = (SELECT COALESCE(SUM(amount), 0) FROM point_transactions WHERE child_id = ${childId} AND amount > 0 AND created_at >= ${weekStart} AND created_at < date(${weekStart}, '+7 days')),
           dimension_count = (
-            SELECT COUNT(DISTINCT t.dimension_id) FROM app.checkins c
-            JOIN app.tasks t ON t.id = c.task_id
-            WHERE c.child_id = ${childId} AND c.date >= ${weekStart}::date AND c.date < ${weekStart}::date + INTERVAL '7 days'
-              AND c.revoked_by_parent = false
+            SELECT COUNT(DISTINCT t.dimension_id) FROM checkins c
+            JOIN tasks t ON t.id = c.task_id
+            WHERE c.child_id = ${childId} AND c.date >= ${weekStart} AND c.date < date(${weekStart}, '+7 days')
+              AND c.revoked_by_parent = 0
           )
         WHERE child_id = ${childId} AND week_start_date = ${weekStart}
       `);
@@ -137,7 +138,7 @@ export async function reviewRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: { code: 9001, message: 'child_id required' } });
     }
 
-    const now = new Date();
+    const now = new Date().toISOString();
     const weekStart = parsed.data.week_start_date;
 
     const [existing] = await db.select().from(schema.weeklyReviews)
@@ -149,28 +150,28 @@ export async function reviewRoutes(app: FastifyInstance) {
     }
 
     const bothCommitted = !!existing?.childCommittedAt;
+    const reviewId = randomUUID();
 
-    await db.execute(sql`
-      INSERT INTO app.weekly_reviews (child_id, week_start_date, parent_observation, parent_committed_at, locked_at, updated_at)
-      VALUES (${child_id}, ${weekStart}, ${parsed.data.parent_observation}, ${now},
-        CASE WHEN ${bothCommitted} THEN ${now} ELSE NULL END, ${now})
+    db.run(sql`
+      INSERT INTO weekly_reviews (id, child_id, week_start_date, parent_observation, parent_committed_at, locked_at, updated_at, created_at)
+      VALUES (${reviewId}, ${child_id}, ${weekStart}, ${parsed.data.parent_observation}, ${now}, NULL, ${now}, ${now})
       ON CONFLICT (child_id, week_start_date) DO UPDATE SET
         parent_observation = EXCLUDED.parent_observation,
         parent_committed_at = ${now},
-        locked_at = CASE WHEN app.weekly_reviews.child_committed_at IS NOT NULL THEN ${now} ELSE app.weekly_reviews.locked_at END,
+        locked_at = CASE WHEN weekly_reviews.child_committed_at IS NOT NULL THEN ${now} ELSE weekly_reviews.locked_at END,
         updated_at = ${now}
     `);
 
     if (bothCommitted) {
-      await db.execute(sql`
-        UPDATE app.weekly_reviews SET
-          task_count = (SELECT COUNT(*) FROM app.checkins WHERE child_id = ${child_id} AND date >= ${weekStart}::date AND date < ${weekStart}::date + INTERVAL '7 days' AND revoked_by_parent = false),
-          point_earned = (SELECT COALESCE(SUM(amount), 0) FROM app.point_transactions WHERE child_id = ${child_id} AND amount > 0 AND created_at >= ${weekStart}::date AND created_at < ${weekStart}::date + INTERVAL '7 days'),
+      db.run(sql`
+        UPDATE weekly_reviews SET
+          task_count = (SELECT COUNT(*) FROM checkins WHERE child_id = ${child_id} AND date >= ${weekStart} AND date < date(${weekStart}, '+7 days') AND revoked_by_parent = 0),
+          point_earned = (SELECT COALESCE(SUM(amount), 0) FROM point_transactions WHERE child_id = ${child_id} AND amount > 0 AND created_at >= ${weekStart} AND created_at < date(${weekStart}, '+7 days')),
           dimension_count = (
-            SELECT COUNT(DISTINCT t.dimension_id) FROM app.checkins c
-            JOIN app.tasks t ON t.id = c.task_id
-            WHERE c.child_id = ${child_id} AND c.date >= ${weekStart}::date AND c.date < ${weekStart}::date + INTERVAL '7 days'
-              AND c.revoked_by_parent = false
+            SELECT COUNT(DISTINCT t.dimension_id) FROM checkins c
+            JOIN tasks t ON t.id = c.task_id
+            WHERE c.child_id = ${child_id} AND c.date >= ${weekStart} AND c.date < date(${weekStart}, '+7 days')
+              AND c.revoked_by_parent = 0
           )
         WHERE child_id = ${child_id} AND week_start_date = ${weekStart}
       `);

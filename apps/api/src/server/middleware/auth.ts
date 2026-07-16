@@ -1,5 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { db, schema } from '../db/client.js';
+import { eq } from 'drizzle-orm';
 
 const PARENT_SECRET = process.env.PARENT_JWT_SECRET || 'dev-parent-secret-32-chars-min';
 const CHILD_SECRET = process.env.CHILD_JWT_SECRET || 'dev-child-secret-32-chars-min';
@@ -14,6 +16,7 @@ export interface AuthPayload {
 declare module 'fastify' {
   interface FastifyRequest {
     auth?: AuthPayload;
+    authAttempted?: boolean;
   }
 }
 
@@ -95,13 +98,28 @@ export async function authMiddleware(request: FastifyRequest, _reply: FastifyRep
   }
 
   if (token) {
-    request.auth = verifyToken(token) ?? undefined;
+    request.authAttempted = true;
+    const payload = verifyToken(token);
+    if (payload && payload.role === 'child' && payload.token_version !== undefined) {
+      // Verify token_version against database to detect revoked tokens
+      const [child] = await db.select({ tokenVersion: schema.children.tokenVersion })
+        .from(schema.children)
+        .where(eq(schema.children.id, payload.sub))
+        .limit(1);
+      if (child && child.tokenVersion === payload.token_version) {
+        request.auth = payload;
+      }
+    } else if (payload) {
+      request.auth = payload;
+    }
   }
 }
 
 export async function requireAuth(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!request.auth) {
-    reply.code(401).send({ error: { code: 1001, message: 'Authentication required' } });
+    const code = request.authAttempted ? 401 : 403;
+    const errCode = request.authAttempted ? 1001 : 2003;
+    reply.code(code).send({ error: { code: errCode, message: 'Authentication required' } });
   }
 }
 
@@ -119,7 +137,9 @@ export async function requireChild(request: FastifyRequest, reply: FastifyReply)
 
 export async function requireFamilyId(request: FastifyRequest, reply: FastifyReply): Promise<string | null> {
   if (!request.auth?.family_id) {
-    reply.code(401).send({ error: { code: 1001, message: 'Authentication required' } });
+    const code = request.authAttempted ? 401 : 403;
+    const errCode = request.authAttempted ? 1001 : 2003;
+    reply.code(code).send({ error: { code: errCode, message: 'Authentication required' } });
     return null;
   }
   return request.auth.family_id;

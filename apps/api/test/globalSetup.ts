@@ -23,8 +23,8 @@ export async function setup(): Promise<void> {
     throw err;
   }
 
-  // Note: Per-session statement_timeout / lock_timeout / idle_in_transaction_session_timeout
-  // are set in db/client.ts via pool.on('connect') so they apply to ALL connections.
+  // SQLite (better-sqlite3) is synchronous and has no connection pool —
+  // no per-session timeout configuration needed.
 }
 
 export async function teardown(): Promise<void> {

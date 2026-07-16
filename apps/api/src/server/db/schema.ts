@@ -1,47 +1,44 @@
 import {
-  pgTable, uuid, text, integer, boolean, timestamp, date, jsonb,
-  primaryKey, uniqueIndex, index, check, pgSchema, serial, bigserial,
-} from 'drizzle-orm/pg-core';
+  sqliteTable, text, integer, uniqueIndex, index, check,
+} from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-
-// Use 'app' schema (Conflict #1 resolution)
-export const appSchema = pgSchema('app');
+import { randomUUID } from 'node:crypto';
 
 // === families ===
-export const families = appSchema.table('families', {
-  id: uuid('id').primaryKey().defaultRandom(),
+export const families = sqliteTable('families', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
   name: text('name').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
+  updatedAt: text('updated_at').notNull().$defaultFn(() => new Date().toISOString()),
 });
 
 // === parents ===
-export const parents = appSchema.table('parents', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  familyId: uuid('family_id').notNull().references(() => families.id, { onDelete: 'cascade' }),
+export const parents = sqliteTable('parents', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  familyId: text('family_id').notNull().references(() => families.id, { onDelete: 'cascade' }),
   email: text('email'),
   phone: text('phone'),
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
+  updatedAt: text('updated_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   emailUnique: uniqueIndex('idx_parents_email').on(t.email).where(sql`email IS NOT NULL`),
   phoneUnique: uniqueIndex('idx_parents_phone').on(t.phone).where(sql`phone IS NOT NULL`),
 }));
 
 // === children ===
-export const children = appSchema.table('children', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  familyId: uuid('family_id').notNull().references(() => families.id, { onDelete: 'cascade' }),
-  name: text('name'),  // encrypted at app layer (ADR-0009)
-  avatar: text('avatar'),  // encrypted at app layer
+export const children = sqliteTable('children', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  familyId: text('family_id').notNull().references(() => families.id, { onDelete: 'cascade' }),
+  name: text('name'),
+  avatar: text('avatar'),
   ageGroup: text('age_group').notNull(),
-  accessToken: text('access_token'),  // HMAC-SHA256 hashed (ADR-0002)
-  tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
+  accessToken: text('access_token'),
+  tokenExpiresAt: text('token_expires_at'),
   tokenVersion: integer('token_version').notNull().default(1),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
+  updatedAt: text('updated_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   ageGroupCheck: check('check_children_age_group', sql`${t.ageGroup} IN ('6-8', '9-11', '12-14')`),
   tokenIdx: index('idx_children_access_token').on(t.accessToken).where(sql`access_token IS NOT NULL`),
@@ -49,34 +46,34 @@ export const children = appSchema.table('children', {
 }));
 
 // === growth_dimensions === (ADR-0011)
-export const growthDimensions = appSchema.table('growth_dimensions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  familyId: uuid('family_id').references(() => families.id, { onDelete: 'cascade' }),  // NULL = global default
-  code: text('code').notNull(),  // 'learning', 'sports', etc.
+export const growthDimensions = sqliteTable('growth_dimensions', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  familyId: text('family_id').references(() => families.id, { onDelete: 'cascade' }),
+  code: text('code').notNull(),
   name: text('name').notNull(),
   color: text('color').notNull(),
-  isDefault: boolean('is_default').notNull().default(false),
+  isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
   sortOrder: integer('sort_order').notNull().default(0),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   familyCodeUnique: uniqueIndex('idx_dimensions_family_code').on(t.familyId, t.code),
 }));
 
 // === tasks === (ADR-0011)
-export const tasks = appSchema.table('tasks', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  familyId: uuid('family_id').notNull().references(() => families.id, { onDelete: 'cascade' }),
-  dimensionId: uuid('dimension_id').notNull().references(() => growthDimensions.id, { onDelete: 'restrict' }),
+export const tasks = sqliteTable('tasks', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  familyId: text('family_id').notNull().references(() => families.id, { onDelete: 'cascade' }),
+  dimensionId: text('dimension_id').notNull().references(() => growthDimensions.id, { onDelete: 'restrict' }),
   title: text('title').notNull(),
   description: text('description'),
   pointValue: integer('point_value').notNull(),
   difficulty: text('difficulty').notNull().default('easy'),
-  difficultyMultiplier: integer('difficulty_multiplier').notNull().default(100),  // stored as %
+  difficultyMultiplier: integer('difficulty_multiplier').notNull().default(100),
   frequency: text('frequency').notNull().default('daily'),
   ageGroup: text('age_group').notNull(),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
+  updatedAt: text('updated_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   difficultyCheck: check('check_tasks_difficulty', sql`${t.difficulty} IN ('easy', 'medium', 'hard')`),
   frequencyCheck: check('check_tasks_frequency', sql`${t.frequency} IN ('daily', 'weekly')`),
@@ -87,43 +84,41 @@ export const tasks = appSchema.table('tasks', {
 }));
 
 // === checkins ===
-export const checkins = appSchema.table('checkins', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  childId: uuid('child_id').notNull().references(() => children.id, { onDelete: 'cascade' }),
-  taskId: uuid('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
-  date: date('date').notNull(),
+export const checkins = sqliteTable('checkins', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  childId: text('child_id').notNull().references(() => children.id, { onDelete: 'cascade' }),
+  taskId: text('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  date: text('date').notNull(),
   note: text('note'),
-  revokedByParent: boolean('revoked_by_parent').notNull().default(false),
-  revokedAt: timestamp('revoked_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  revokedByParent: integer('revoked_by_parent', { mode: 'boolean' }).notNull().default(false),
+  revokedAt: text('revoked_at'),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
-  // One check-in per task per day per child (unless revoked)
   uniqueCheckin: uniqueIndex('idx_checkins_child_task_date').on(t.childId, t.taskId, t.date),
   childDateIdx: index('idx_checkins_child_date').on(t.childId, t.date),
 }));
 
 // === point_transactions === (ADR-0003)
-export const pointTransactions = appSchema.table('point_transactions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  childId: uuid('child_id').notNull().references(() => children.id, { onDelete: 'cascade' }),
+export const pointTransactions = sqliteTable('point_transactions', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  childId: text('child_id').notNull().references(() => children.id, { onDelete: 'cascade' }),
   amount: integer('amount').notNull(),
   sourceType: text('source_type').notNull(),
-  sourceId: uuid('source_id').notNull(),
+  sourceId: text('source_id').notNull(),
   balanceAfter: integer('balance_after').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   amountCheck: check('check_point_tx_amount', sql`${t.amount} <> 0`),
   sourceTypeCheck: check('check_point_tx_source_type', sql`${t.sourceType} IN ('task', 'reward', 'revocation')`),
   childCreatedIdx: index('idx_point_tx_child_created').on(t.childId, t.createdAt),
-  // Conflict #4: partial unique index with child_id
   uniqueSource: uniqueIndex('uq_point_tx_source').on(t.childId, t.sourceType, t.sourceId)
     .where(sql`source_type IN ('task', 'reward', 'revocation')`),
 }));
 
 // === rewards === (ADR-0012)
-export const rewards = appSchema.table('rewards', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  familyId: uuid('family_id').notNull().references(() => families.id, { onDelete: 'cascade' }),
+export const rewards = sqliteTable('rewards', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  familyId: text('family_id').notNull().references(() => families.id, { onDelete: 'cascade' }),
   title: text('title').notNull(),
   description: text('description'),
   pointCost: integer('point_cost').notNull(),
@@ -131,9 +126,9 @@ export const rewards = appSchema.table('rewards', {
   totalClaimed: integer('total_claimed').notNull().default(0),
   weeklyLimitPerChild: integer('weekly_limit_per_child').notNull().default(1),
   icon: text('icon'),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
+  updatedAt: text('updated_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   pointCostCheck: check('check_rewards_point_cost', sql`${t.pointCost} BETWEEN 1 AND 10000`),
   inventoryCheck: check('check_rewards_inventory', sql`${t.totalClaimed} <= ${t.totalInventory}`),
@@ -141,18 +136,18 @@ export const rewards = appSchema.table('rewards', {
 }));
 
 // === reward_redemptions === (ADR-0004)
-export const rewardRedemptions = appSchema.table('reward_redemptions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  childId: uuid('child_id').notNull().references(() => children.id, { onDelete: 'cascade' }),
-  rewardId: uuid('reward_id').notNull().references(() => rewards.id, { onDelete: 'cascade' }),
-  pointCost: integer('point_cost').notNull(),  // snapshot at redemption time
+export const rewardRedemptions = sqliteTable('reward_redemptions', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  childId: text('child_id').notNull().references(() => children.id, { onDelete: 'cascade' }),
+  rewardId: text('reward_id').notNull().references(() => rewards.id, { onDelete: 'cascade' }),
+  pointCost: integer('point_cost').notNull(),
   status: text('status').notNull().default('pending'),
   parentNote: text('parent_note'),
-  redeemedAt: timestamp('redeemed_at', { withTimezone: true }).notNull().defaultNow(),
-  approvedAt: timestamp('approved_at', { withTimezone: true }),
-  fulfilledAt: timestamp('fulfilled_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  redeemedAt: text('redeemed_at').notNull().$defaultFn(() => new Date().toISOString()),
+  approvedAt: text('approved_at'),
+  fulfilledAt: text('fulfilled_at'),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
+  updatedAt: text('updated_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   statusCheck: check('check_redemption_status',
     sql`${t.status} IN ('pending', 'approved', 'rejected', 'fulfilled', 'cancelled')`),
@@ -162,25 +157,24 @@ export const rewardRedemptions = appSchema.table('reward_redemptions', {
 }));
 
 // === weekly_reviews === (ADR-0005)
-export const weeklyReviews = appSchema.table('weekly_reviews', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  childId: uuid('child_id').notNull().references(() => children.id, { onDelete: 'cascade' }),
-  weekStartDate: date('week_start_date').notNull(),
+export const weeklyReviews = sqliteTable('weekly_reviews', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  childId: text('child_id').notNull().references(() => children.id, { onDelete: 'cascade' }),
+  weekStartDate: text('week_start_date').notNull(),
   bestThing: text('best_thing'),
   difficulty: text('difficulty'),
   childRequest: text('child_request'),
-  childCommittedAt: timestamp('child_committed_at', { withTimezone: true }),
+  childCommittedAt: text('child_committed_at'),
   parentObservation: text('parent_observation'),
-  parentCommittedAt: timestamp('parent_committed_at', { withTimezone: true }),
+  parentCommittedAt: text('parent_committed_at'),
   taskCount: integer('task_count'),
   pointEarned: integer('point_earned'),
   dimensionCount: integer('dimension_count'),
-  lockedAt: timestamp('locked_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  lockedAt: text('locked_at'),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
+  updatedAt: text('updated_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   uniqueWeek: uniqueIndex('idx_weekly_reviews_child_week').on(t.childId, t.weekStartDate),
-  // CHECK constraint for valid commit states (ADR-0005)
   commitStateCheck: check('check_review_commit_state', sql`
     (${t.childCommittedAt} IS NULL AND ${t.parentCommittedAt} IS NULL)
     OR (${t.childCommittedAt} IS NOT NULL AND ${t.parentCommittedAt} IS NULL AND ${t.lockedAt} IS NULL)
@@ -190,27 +184,27 @@ export const weeklyReviews = appSchema.table('weekly_reviews', {
 }));
 
 // === weekly_review_access_log === (ADR-0005, Conflict #5)
-export const weeklyReviewAccessLog = appSchema.table('weekly_review_access_log', {
-  id: bigserial('id', { mode: 'bigint' }).primaryKey(),
-  reviewId: uuid('review_id').notNull().references(() => weeklyReviews.id, { onDelete: 'cascade' }),
+export const weeklyReviewAccessLog = sqliteTable('weekly_review_access_log', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  reviewId: text('review_id').notNull().references(() => weeklyReviews.id, { onDelete: 'cascade' }),
   readerRole: text('reader_role').notNull(),
   fieldRead: text('field_read').notNull(),
-  readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
+  readAt: text('read_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   readerRoleCheck: check('check_access_log_reader', sql`${t.readerRole} IN ('child', 'parent', 'system')`),
 }));
 
 // === growth_diaries === (ADR-0014, ADR-0009 encryption)
-export const growthDiaries = appSchema.table('growth_diaries', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  childId: uuid('child_id').notNull().references(() => children.id, { onDelete: 'cascade' }),
-  title: text('title'),  // encrypted at app layer
-  content: text('content'),  // encrypted at app layer
+export const growthDiaries = sqliteTable('growth_diaries', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  childId: text('child_id').notNull().references(() => children.id, { onDelete: 'cascade' }),
+  title: text('title'),
+  content: text('content'),
   category: text('category').notNull().default('reflection'),
-  weekStartDate: date('week_start_date'),
-  createdByChild: boolean('created_by_child').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  weekStartDate: text('week_start_date'),
+  createdByChild: integer('created_by_child', { mode: 'boolean' }).notNull().default(true),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
+  updatedAt: text('updated_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   categoryCheck: check('check_diary_category',
     sql`${t.category} IN ('achievement', 'reflection', 'goal', 'memory')`),
@@ -219,17 +213,17 @@ export const growthDiaries = appSchema.table('growth_diaries', {
 }));
 
 // === notifications === (ADR-0013)
-export const notifications = appSchema.table('notifications', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  familyId: uuid('family_id').notNull().references(() => families.id, { onDelete: 'cascade' }),
-  childId: uuid('child_id').references(() => children.id, { onDelete: 'cascade' }),
+export const notifications = sqliteTable('notifications', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  familyId: text('family_id').notNull().references(() => families.id, { onDelete: 'cascade' }),
+  childId: text('child_id').references(() => children.id, { onDelete: 'cascade' }),
   recipientRole: text('recipient_role').notNull(),
   type: text('type').notNull(),
   title: text('title').notNull(),
   body: text('body'),
-  isRead: boolean('is_read').notNull().default(false),
-  metadata: jsonb('metadata'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  isRead: integer('is_read', { mode: 'boolean' }).notNull().default(false),
+  metadata: text('metadata'),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   recipientRoleCheck: check('check_notif_recipient', sql`${t.recipientRole} IN ('parent', 'child')`),
   familyIdx: index('idx_notif_family').on(t.familyId),
@@ -237,32 +231,32 @@ export const notifications = appSchema.table('notifications', {
 }));
 
 // === audit_logs === (ADR-0015)
-export const auditLogs = appSchema.table('audit_logs', {
-  id: bigserial('id', { mode: 'bigint' }).primaryKey(),
-  familyId: uuid('family_id').references(() => families.id, { onDelete: 'cascade' }),
+export const auditLogs = sqliteTable('audit_logs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  familyId: text('family_id').references(() => families.id, { onDelete: 'cascade' }),
   actorRole: text('actor_role').notNull(),
-  actorId: uuid('actor_id'),
+  actorId: text('actor_id'),
   action: text('action').notNull(),
   targetType: text('target_type'),
-  targetId: uuid('target_id'),
-  metadata: jsonb('metadata'),
+  targetId: text('target_id'),
+  metadata: text('metadata'),
   ipAddress: text('ip_address'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   actorRoleCheck: check('check_audit_actor', sql`${t.actorRole} IN ('parent', 'child', 'system')`),
   familyIdx: index('idx_audit_family').on(t.familyId, t.createdAt),
 }));
 
 // === conflict_alerts === (ADR-0011, offline sync)
-export const conflictAlerts = appSchema.table('conflict_alerts', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  familyId: uuid('family_id').notNull().references(() => families.id, { onDelete: 'cascade' }),
+export const conflictAlerts = sqliteTable('conflict_alerts', {
+  id: text('id').primaryKey().$defaultFn(() => randomUUID()),
+  familyId: text('family_id').notNull().references(() => families.id, { onDelete: 'cascade' }),
   entityType: text('entity_type').notNull(),
-  entityId: uuid('entity_id').notNull(),
-  childId: uuid('child_id').references(() => children.id, { onDelete: 'cascade' }),
-  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
-  metadata: jsonb('metadata'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  entityId: text('entity_id').notNull(),
+  childId: text('child_id').references(() => children.id, { onDelete: 'cascade' }),
+  resolvedAt: text('resolved_at'),
+  metadata: text('metadata'),
+  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
 }, (t) => ({
   familyIdx: index('idx_conflict_family').on(t.familyId, t.resolvedAt),
 }));

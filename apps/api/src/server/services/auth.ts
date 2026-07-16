@@ -15,25 +15,27 @@ export async function registerParent(input: {
     parallelism: 1,
   });
 
-  return db.transaction(async (tx) => {
-    const [family] = await tx.insert(schema.families).values({
+  const { family, parent } = db.transaction((tx) => {
+    const [family] = tx.insert(schema.families).values({
       name: input.family_name,
-    }).returning();
+    }).returning().all();
 
-    const [parent] = await tx.insert(schema.parents).values({
+    const [parent] = tx.insert(schema.parents).values({
       familyId: family.id,
       email: input.email || null,
       phone: input.phone || null,
       name: input.parent_name,
       passwordHash,
-    }).returning();
+    }).returning().all();
 
     // Seed default dimensions
-    await seedDefaultDimensions(tx, family.id);
+    seedDefaultDimensions(tx, family.id);
 
-    const token = await signParentToken({ sub: parent.id, family_id: family.id });
-    return { token, family, parent: { id: parent.id, name: parent.name, email: parent.email, phone: parent.phone } };
+    return { family, parent };
   });
+
+  const token = await signParentToken({ sub: parent.id, family_id: family.id });
+  return { token, family, parent: { id: parent.id, name: parent.name, email: parent.email, phone: parent.phone } };
 }
 
 export async function loginParent(emailOrPhone: string, password: string) {
@@ -59,35 +61,37 @@ export async function loginParent(emailOrPhone: string, password: string) {
   return { token, parent: { id: found.id, name: found.name, email: found.email, phone: found.phone, familyId: found.familyId } };
 }
 
-export async function createChild(familyId: string, input: { name: string; age_group: string; avatar?: string }) {
+export async function createChild(familyId: string, input: { name: string; age_group: string; avatar?: string | null }) {
   const { plaintext, hashed } = generateAndHashToken();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-  return db.transaction(async (tx) => {
-    const [child] = await tx.insert(schema.children).values({
+  const child = db.transaction((tx) => {
+    const [child] = tx.insert(schema.children).values({
       familyId,
       name: input.name,
       ageGroup: input.age_group,
       avatar: input.avatar || null,
       accessToken: hashed,
-      tokenExpiresAt: expiresAt,
+      tokenExpiresAt: expiresAt.toISOString(),
       tokenVersion: 1,
-    }).returning();
+    }).returning().all();
 
-    await tx.update(schema.children).set({
+    tx.update(schema.children).set({
       name: encryptField('children', child.id, input.name),
       avatar: encryptField('children', child.id, input.avatar || null),
-    }).where(eq(schema.children.id, child.id));
+    }).where(eq(schema.children.id, child.id)).run();
 
-    return {
-      id: child.id,
-      familyId: child.familyId,
-      name: input.name,
-      ageGroup: child.ageGroup,
-      accessToken: plaintext,
-      tokenExpiresAt: expiresAt.toISOString(),
-    };
+    return child;
   });
+
+  return {
+    id: child.id,
+    familyId: child.familyId,
+    name: input.name,
+    ageGroup: child.ageGroup,
+    accessToken: plaintext,
+    tokenExpiresAt: expiresAt.toISOString(),
+  };
 }
 
 export async function getChildByToken(plaintextToken: string) {
@@ -97,7 +101,7 @@ export async function getChildByToken(plaintextToken: string) {
     .limit(1);
 
   if (!child) return null;
-  if (child.tokenExpiresAt && child.tokenExpiresAt < new Date()) return null;
+  if (child.tokenExpiresAt && child.tokenExpiresAt < new Date().toISOString()) return null;
 
   return child;
 }
@@ -106,10 +110,11 @@ export async function regenerateChildToken(childId: string, familyId: string) {
   const { plaintext, hashed } = generateAndHashToken();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
+  const currentChild = await db.select().from(schema.children).where(eq(schema.children.id, childId)).limit(1);
   await db.update(schema.children).set({
     accessToken: hashed,
-    tokenExpiresAt: expiresAt,
-    tokenVersion: (await db.select().from(schema.children).where(eq(schema.children.id, childId)).limit(1))[0].tokenVersion + 1,
+    tokenExpiresAt: expiresAt.toISOString(),
+    tokenVersion: (currentChild[0]).tokenVersion + 1,
   }).where(and(eq(schema.children.id, childId), eq(schema.children.familyId, familyId)));
 
   return { accessToken: plaintext, tokenExpiresAt: expiresAt.toISOString() };
@@ -125,9 +130,9 @@ export async function getChildrenForFamily(familyId: string) {
     name: decryptField('children', c.id, c.name),
     ageGroup: c.ageGroup,
     avatar: decryptField('children', c.id, c.avatar),
-    tokenExpiresAt: c.tokenExpiresAt?.toISOString() ?? null,
+    tokenExpiresAt: c.tokenExpiresAt,
     tokenVersion: c.tokenVersion,
-    createdAt: c.createdAt.toISOString(),
+    createdAt: c.createdAt,
   }));
 }
 
@@ -143,13 +148,13 @@ export async function getChildById(childId: string, familyId: string) {
     name: decryptField('children', c.id, c.name),
     ageGroup: c.ageGroup,
     avatar: decryptField('children', c.id, c.avatar),
-    tokenExpiresAt: c.tokenExpiresAt?.toISOString() ?? null,
+    tokenExpiresAt: c.tokenExpiresAt,
     tokenVersion: c.tokenVersion,
-    createdAt: c.createdAt.toISOString(),
+    createdAt: c.createdAt,
   };
 }
 
-async function seedDefaultDimensions(tx: any, familyId: string) {
+function seedDefaultDimensions(tx: any, familyId: string) {
   const defaults = [
     { code: 'learning', name: '学习力', color: '#2196F3', sortOrder: 1 },
     { code: 'sports', name: '运动力', color: '#FF9800', sortOrder: 2 },
@@ -159,13 +164,13 @@ async function seedDefaultDimensions(tx: any, familyId: string) {
   ];
 
   for (const d of defaults) {
-    await tx.insert(schema.growthDimensions).values({
+    tx.insert(schema.growthDimensions).values({
       familyId,
       code: d.code,
       name: d.name,
       color: d.color,
       isDefault: true,
       sortOrder: d.sortOrder,
-    });
+    }).run();
   }
 }

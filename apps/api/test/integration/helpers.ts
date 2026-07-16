@@ -19,26 +19,26 @@ export async function createTestApp(): Promise<FastifyInstance> {
 
 /**
  * Clean all tables between tests for isolation.
- * Truncates all tables in the app schema (cascade).
+ * Uses DELETE FROM for each table (SQLite doesn't support TRUNCATE).
  */
 export async function cleanDatabase(): Promise<void> {
-  await db.execute(sql`TRUNCATE TABLE
-    app.conflict_alerts,
-    app.audit_logs,
-    app.notifications,
-    app.growth_diaries,
-    app.weekly_review_access_log,
-    app.weekly_reviews,
-    app.reward_redemptions,
-    app.rewards,
-    app.point_transactions,
-    app.checkins,
-    app.tasks,
-    app.growth_dimensions,
-    app.children,
-    app.parents,
-    app.families
-  CASCADE`);
+  db.run(sql`DELETE FROM conflict_alerts`);
+  db.run(sql`DELETE FROM audit_logs`);
+  db.run(sql`DELETE FROM notifications`);
+  db.run(sql`DELETE FROM growth_diaries`);
+  db.run(sql`DELETE FROM weekly_review_access_log`);
+  db.run(sql`DELETE FROM weekly_reviews`);
+  db.run(sql`DELETE FROM reward_redemptions`);
+  db.run(sql`DELETE FROM rewards`);
+  db.run(sql`DELETE FROM point_transactions`);
+  db.run(sql`DELETE FROM checkins`);
+  db.run(sql`DELETE FROM tasks`);
+  db.run(sql`DELETE FROM growth_dimensions`);
+  db.run(sql`DELETE FROM children`);
+  db.run(sql`DELETE FROM parents`);
+  db.run(sql`DELETE FROM families`);
+  // Reset auto-increment sequences
+  db.run(sql`DELETE FROM sqlite_sequence`);
 }
 
 /**
