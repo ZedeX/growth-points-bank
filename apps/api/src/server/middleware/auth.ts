@@ -110,7 +110,13 @@ export async function authMiddleware(request: FastifyRequest, _reply: FastifyRep
   }
 
   if (token) {
+    if (process.env.NODE_ENV === 'test') {
+      console.log(`[auth] verifyToken start for ${request.url}`);
+    }
     request.auth = verifyToken(token) ?? undefined;
+    if (process.env.NODE_ENV === 'test') {
+      console.log(`[auth] verifyToken done role=${request.auth?.role}`);
+    }
   }
 }
 
