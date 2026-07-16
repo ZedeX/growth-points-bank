@@ -1,7 +1,12 @@
 import { db, schema } from './client.js';
 import { sql } from 'drizzle-orm';
+import { pathToFileURL } from 'node:url';
 
-async function migrate() {
+// Exported so test globalSetup can call it without spawning a subprocess.
+// When run as a script (`pnpm db:migrate`), the bottom of the file invokes
+// migrate() and exits the process explicitly (DB pool keeps the event loop
+// alive otherwise).
+export async function migrate(): Promise<void> {
   console.log('[migrate] Running migrations...');
 
   // Create schema if not exists
@@ -273,10 +278,21 @@ async function migrate() {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_conflict_family ON app.conflict_alerts(family_id, resolved_at)`);
 
   console.log('[migrate] All migrations applied successfully.');
-  process.exit(0);
 }
 
-migrate().catch(err => {
-  console.error('[migrate] Migration failed:', err);
-  process.exit(1);
-});
+// Only run as a script (e.g. `pnpm db:migrate` / `tsx src/server/db/migrate.ts`).
+// When imported (e.g. by vitest globalSetup), the importer is responsible for
+// calling migrate() and managing the process lifecycle.
+const isMainModule = import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
+
+if (isMainModule) {
+  migrate()
+    .then(() => {
+      console.log('[migrate] Done. Exiting.');
+      process.exit(0);
+    })
+    .catch(err => {
+      console.error('[migrate] Migration failed:', err);
+      process.exit(1);
+    });
+}

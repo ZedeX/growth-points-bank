@@ -1,8 +1,6 @@
 // Global setup: runs once before all test files.
 // Runs database migrations to ensure tables exist.
 
-import { db } from '../src/server/db/client.js';
-import { sql } from 'drizzle-orm';
 import { migrate } from '../src/server/db/migrate.js';
 
 export async function setup(): Promise<void> {
