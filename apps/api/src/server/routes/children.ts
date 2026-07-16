@@ -21,17 +21,13 @@ export async function childrenRoutes(app: FastifyInstance) {
   app.post('/api/children', {
     preHandler: [requireParent],
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    if (process.env.NODE_ENV === 'test') console.log('[route] POST /api/children handler start');
     const familyId = requireFamilyId(request, reply);
     if (!familyId) return;
-    if (process.env.NODE_ENV === 'test') console.log('[route] POST /api/children familyId ok');
     const parsed = createChildSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: { code: 9001, message: parsed.error.message } });
     }
-    if (process.env.NODE_ENV === 'test') console.log('[route] POST /api/children parsed ok, calling service');
     const child = await createChild(familyId, parsed.data);
-    if (process.env.NODE_ENV === 'test') console.log('[route] POST /api/children service returned');
     return reply.code(201).send(child);
   });
 
