@@ -1,9 +1,8 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import * as jose from 'jose';
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
 
-const PARENT_SECRET = new TextEncoder().encode(process.env.PARENT_JWT_SECRET || 'dev-parent-secret-32-chars-min');
-const CHILD_SECRET = new TextEncoder().encode(process.env.CHILD_JWT_SECRET || 'dev-child-secret-32-chars-min');
+const PARENT_SECRET = process.env.PARENT_JWT_SECRET || 'dev-parent-secret-32-chars-min';
+const CHILD_SECRET = process.env.CHILD_JWT_SECRET || 'dev-child-secret-32-chars-min';
 
 export interface AuthPayload {
   role: 'parent' | 'child';
@@ -18,43 +17,46 @@ declare module 'fastify' {
   }
 }
 
-export async function signParentToken(payload: { sub: string; family_id: string }): Promise<string> {
-  const jwt = await new jose.SignJWT({ ...payload, role: 'parent' })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(PARENT_SECRET);
-  return jwt;
-}
-
-export async function signChildToken(payload: { sub: string; family_id: string; token_version: number }): Promise<string> {
-  const jwt = await new jose.SignJWT({ ...payload, role: 'child' })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(CHILD_SECRET);
-  return jwt;
-}
-
 /**
- * Verify a JWT token using Node.js native crypto (not jose/Web Crypto API).
- * jose.jwtVerify() was hanging in CI (Node 24 + vitest singleFork mode),
- * causing every authenticated request to time out. This implementation
- * uses createHmac directly and is fully synchronous.
+ * Sign a JWT using Node.js native crypto (not jose/Web Crypto API).
+ * jose.SignJWT and jose.jwtVerify were both causing issues in CI
+ * (Node 24 + vitest singleFork mode) - SignJWT left dangling Web Crypto
+ * promises that interfered with subsequent db.transaction() calls.
  */
-function verifyTokenSync(token: string, secret: Uint8Array): any | null {
+function signJWT(payload: Record<string, any>, secret: string, expiresInSec: number): string {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  const fullPayload = {
+    ...payload,
+    iat: now,
+    exp: now + expiresInSec,
+  };
+
+  const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
+  const payloadB64 = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
+  const signingInput = `${headerB64}.${payloadB64}`;
+  const signature = createHmac('sha256', secret).update(signingInput).digest('base64url');
+
+  return `${headerB64}.${payloadB64}.${signature}`;
+}
+
+export function signParentToken(payload: { sub: string; family_id: string }): string {
+  return signJWT({ ...payload, role: 'parent' }, PARENT_SECRET, 7 * 24 * 60 * 60);
+}
+
+export function signChildToken(payload: { sub: string; family_id: string; token_version: number }): string {
+  return signJWT({ ...payload, role: 'child' }, CHILD_SECRET, 7 * 24 * 60 * 60);
+}
+
+function verifyTokenSync(token: string, secret: string): any | null {
   const parts = token.split('.');
   if (parts.length !== 3) return null;
 
   const [headerB64, payloadB64, signatureB64] = parts;
   const signingInput = `${headerB64}.${payloadB64}`;
 
-  // Compute expected signature
-  const expectedSig = createHmac('sha256', Buffer.from(secret))
-    .update(signingInput)
-    .digest('base64url');
+  const expectedSig = createHmac('sha256', secret).update(signingInput).digest('base64url');
 
-  // Timing-safe comparison
   try {
     const a = Buffer.from(signatureB64);
     const b = Buffer.from(expectedSig);
@@ -64,10 +66,8 @@ function verifyTokenSync(token: string, secret: Uint8Array): any | null {
     return null;
   }
 
-  // Decode payload
   try {
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-    // Check expiration
     if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
       return null;
     }
@@ -78,13 +78,11 @@ function verifyTokenSync(token: string, secret: Uint8Array): any | null {
 }
 
 export function verifyToken(token: string): AuthPayload | null {
-  // Try parent secret first
   const parentPayload = verifyTokenSync(token, PARENT_SECRET);
   if (parentPayload && parentPayload.role === 'parent') {
     return { role: 'parent', sub: parentPayload.sub, family_id: parentPayload.family_id };
   }
 
-  // Try child secret
   const childPayload = verifyTokenSync(token, CHILD_SECRET);
   if (childPayload && childPayload.role === 'child') {
     return {
@@ -110,13 +108,7 @@ export async function authMiddleware(request: FastifyRequest, _reply: FastifyRep
   }
 
   if (token) {
-    if (process.env.NODE_ENV === 'test') {
-      console.log(`[auth] verifyToken start for ${request.url}`);
-    }
     request.auth = verifyToken(token) ?? undefined;
-    if (process.env.NODE_ENV === 'test') {
-      console.log(`[auth] verifyToken done role=${request.auth?.role}`);
-    }
   }
 }
 
