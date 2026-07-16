@@ -11,10 +11,10 @@
     "test": "pnpm -r run test",
     "lint": "pnpm -r run lint",
     "typecheck": "pnpm -r run typecheck",
-    "db:generate": "pnpm --filter @gpb/api drizzle-kit generate",
-    "db:migrate": "pnpm --filter @gpb/api tsx src/server/db/migrate.ts",
-    "db:seed": "pnpm --filter @gpb/api tsx src/server/db/seed.ts",
-    "db:studio": "pnpm --filter @gpb/api drizzle-kit studio"
+    "db:generate": "pnpm --filter @gpb/api run db:generate",
+    "db:migrate": "pnpm --filter @gpb/api run db:migrate",
+    "db:seed": "pnpm --filter @gpb/api run db:seed",
+    "db:studio": "pnpm --filter @gpb/api run db:studio"
   },
   "devDependencies": {
     "typescript": "^5.5.0"
