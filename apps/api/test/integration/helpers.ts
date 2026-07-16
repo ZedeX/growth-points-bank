@@ -5,7 +5,6 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/server/app.js';
 import { db, schema } from '../../src/server/db/client.js';
 import { sql } from 'drizzle-orm';
-import type { TypeEqual } from 'vitest';
 
 export interface TestContext {
   app: FastifyInstance;
@@ -15,7 +14,10 @@ export interface TestContext {
  * Build a Fastify app instance for testing.
  */
 export async function createTestApp(): Promise<FastifyInstance> {
-  return buildApp();
+  console.log('[helpers] createTestApp start');
+  const app = await buildApp();
+  console.log('[helpers] createTestApp done');
+  return app;
 }
 
 /**
@@ -23,6 +25,7 @@ export async function createTestApp(): Promise<FastifyInstance> {
  * Truncates all tables in the app schema (cascade).
  */
 export async function cleanDatabase(): Promise<void> {
+  console.log('[helpers] cleanDatabase start');
   await db.execute(sql`TRUNCATE TABLE
     app.conflict_alerts,
     app.audit_logs,
@@ -40,6 +43,7 @@ export async function cleanDatabase(): Promise<void> {
     app.parents,
     app.families
   CASCADE`);
+  console.log('[helpers] cleanDatabase done');
 }
 
 /**
@@ -63,6 +67,7 @@ export async function registerParent(overrides: Partial<{
 }> {
   const app = overrides.app ?? await createTestApp();
   const suffix = Math.random().toString(36).slice(2, 10);
+  console.log(`[helpers] registerParent start email=${overrides.email || 'random'}`);
   const response = await app.inject({
     method: 'POST',
     url: '/api/auth/register',
@@ -74,6 +79,7 @@ export async function registerParent(overrides: Partial<{
       parent_name: overrides.parent_name || '测试家长',
     },
   });
+  console.log(`[helpers] registerParent status=${response.statusCode}`);
 
   if (response.statusCode !== 201) {
     throw new Error(`Register failed: ${response.statusCode} ${response.body}`);
@@ -117,6 +123,7 @@ export async function createChild(
   parentToken: string,
   overrides: Partial<{ name: string; age_group: string; avatar: string }> = {},
 ): Promise<{ childId: string; accessToken: string }> {
+  console.log(`[helpers] createChild start name=${overrides.name || 'default'}`);
   const response = await app.inject({
     method: 'POST',
     url: '/api/children',
@@ -127,6 +134,7 @@ export async function createChild(
       avatar: overrides.avatar || null,
     },
   });
+  console.log(`[helpers] createChild status=${response.statusCode}`);
 
   if (response.statusCode !== 201) {
     throw new Error(`Create child failed: ${response.statusCode} ${response.body}`);
@@ -143,10 +151,12 @@ export async function getChildJwt(
   app: FastifyInstance,
   accessToken: string,
 ): Promise<string> {
+  console.log('[helpers] getChildJwt start');
   const response = await app.inject({
     method: 'GET',
     url: `/api/child/auth?token=${accessToken}`,
   });
+  console.log(`[helpers] getChildJwt status=${response.statusCode}`);
 
   if (response.statusCode !== 200) {
     throw new Error(`Child auth failed: ${response.statusCode} ${response.body}`);
